@@ -12,34 +12,44 @@ import (
 )
 
 var (
-	specCache  Spec
-	cacheValid bool
-	cacheMutex sync.RWMutex
-	typeIndex  *TypeIndex
+	specCache     Spec
+	cacheValid    bool
+	cacheMutex    sync.RWMutex
+	typeIndex     *TypeIndex
+	typeIndexOnce sync.Once
 )
 
 // Find a way to add method that will add external known types to the type index
 // This is useful for types that are not defined in the current package but are known to the OpenAPI spec,
 // such as types from external libraries or standard library types that we want to document.
-func init() {
-	slog.Info("[openapi] cache.go: initializing typeIndex and externalKnownTypes")
-	// Build type index once at startup
-	typeIndex = BuildTypeIndex()
+func ensureTypeIndex() {
+	// debug.PrintStack()
+	typeIndexOnce.Do(func() {
+		slog.Info("[openapi] cache.go: initializing typeIndex and externalKnownTypes")
+		// Build type index once at startup
+		typeIndex = BuildTypeIndex()
 
-	slog.Info("[openapi] cache.go: typeIndex built, setting externalKnownTypes")
-	typeIndex.externalKnownTypes = map[string]*Schema{
-		"json.RawMessage":    {Type: "object", Description: "raw json byte slice, used for dynamic JSON data"},
-		"pgtype.Numeric":     {Type: "number", Description: "external type: postgres numeric"},
-		"pgtype.Interval":    {Type: "string", Description: "external type: postgres interval"},
-		"pgtype.Timestamptz": {Type: "date-time", Description: "external type: postgres timezone aware timestamp"},
-		"pgtype.Timestamp":   {Type: "date-time", Description: "external type: postgres timestamp"},
-		"pgtype.UUID":        {Type: "string", Description: "external type: postgres uuid type"},
-		"pgtype.JSONB":       {Type: "object", Description: "external type: postgres JSONB"},
-		"pgtype.JSON":        {Type: "object", Description: "external type: postgres JSON"},
-		// Add more external types as needed
-	}
-	// Log the number of types and files indexed
-	slog.Info("[openapi] cache.go: typeIndex initialized", "types", len(typeIndex.types), "files", len(typeIndex.files))
+		slog.Info("[openapi] cache.go: typeIndex built, setting externalKnownTypes")
+		typeIndex.externalKnownTypes = map[string]*Schema{
+			"json.RawMessage":    {Type: "object", Description: "raw json byte slice, used for dynamic JSON data"},
+			"pgtype.Numeric":     {Type: "number", Description: "external type: postgres numeric"},
+			"pgtype.Interval":    {Type: "string", Description: "external type: postgres interval"},
+			"pgtype.Timestamptz": {Type: "date-time", Description: "external type: postgres timezone aware timestamp"},
+			"pgtype.Timestamp":   {Type: "date-time", Description: "external type: postgres timestamp"},
+			"pgtype.UUID":        {Type: "string", Description: "external type: postgres uuid type"},
+			"pgtype.JSONB":       {Type: "object", Description: "external type: postgres JSONB"},
+			"pgtype.JSON":        {Type: "object", Description: "external type: postgres JSON"},
+			// Add more external types as needed
+		}
+		// Log the number of types and files indexed
+		slog.Info(
+			"[openapi] cache.go: typeIndex initialized",
+			"types",
+			len(typeIndex.types),
+			"files",
+			len(typeIndex.files),
+		)
+	})
 }
 
 // TypeIndex provides fast lookup of type definitions by package and type name.

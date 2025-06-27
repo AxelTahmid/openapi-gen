@@ -50,7 +50,8 @@ func TestParseAnnotations_Empty(t *testing.T) {
 func Test_parseParamAnnotation(t *testing.T) {
 	line := "@Param foo query int true \"desc\""
 	param := parseParamAnnotation(line)
-	if param == nil || param.Name != "foo" || param.In != "query" || param.Type != "int" || !param.Required || param.Description != "desc" {
+	if param == nil || param.Name != "foo" || param.In != "query" || param.Type != "int" || !param.Required ||
+		param.Description != "desc" {
 		t.Errorf("unexpected param: %+v", param)
 	}
 }

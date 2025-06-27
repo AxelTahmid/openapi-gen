@@ -11,6 +11,7 @@ import (
 
 func CachedHandler(router chi.Router, cfg Config) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		ensureTypeIndex()
 		slog.Info("[openapi] CachedHandler: checking cache validity")
 		refresh := r.URL.Query().Get("refresh") == "true"
 
@@ -56,6 +57,7 @@ func InvalidateCache(w http.ResponseWriter, _ *http.Request) {
 
 // GenerateOpenAPISpecFile generates the OpenAPI spec and writes it to the given file path.
 func GenerateOpenAPISpecFile(router chi.Router, cfg Config, filePath string, refresh bool) error {
+	ensureTypeIndex()
 	slog.Info("[openapi] GenerateOpenAPISpecFile: generating OpenAPI spec", "filePath", filePath)
 
 	cacheMutex.RLock()
@@ -103,6 +105,7 @@ func GenerateOpenAPISpecFile(router chi.Router, cfg Config, filePath string, ref
 // GenerateFileHandler is an HTTP handler that generates the OpenAPI spec file and returns a status message.
 func GenerateFileHandler(router chi.Router, cfg Config) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		ensureTypeIndex()
 		slog.Info("[openapi] GenerateFileHandler: checking cache validity")
 		refresh := r.URL.Query().Get("refresh") == "true"
 
