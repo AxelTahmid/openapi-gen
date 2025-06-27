@@ -15,8 +15,11 @@ type Annotation struct {
 	Summary     string
 	Description string
 	Tags        []string
-	Success     *SuccessResponse
+	Accept      []string
+	Produce     []string
+	Security    []string
 	Parameters  []ParamAnnotation
+	Success     *SuccessResponse
 	Failures    []ErrorResponse
 }
 
@@ -122,21 +125,44 @@ func parseAnnotationComment(comment string) *Annotation {
 		switch {
 		case strings.HasPrefix(line, "@Summary"):
 			annotation.Summary = strings.TrimSpace(strings.TrimPrefix(line, "@Summary"))
+
 		case strings.HasPrefix(line, "@Description"):
 			annotation.Description = strings.TrimSpace(strings.TrimPrefix(line, "@Description"))
+
 		case strings.HasPrefix(line, "@Tags"):
 			tags := strings.TrimSpace(strings.TrimPrefix(line, "@Tags"))
 			annotation.Tags = strings.Split(tags, ",")
 			for i := range annotation.Tags {
 				annotation.Tags[i] = strings.TrimSpace(annotation.Tags[i])
 			}
-		case strings.HasPrefix(line, "@Success"):
-			annotation.Success = parseSuccessAnnotation(line)
+
+		case strings.HasPrefix(line, "@Accept"):
+			accept := strings.TrimSpace(strings.TrimPrefix(line, "@Accept"))
+			if accept == "" {
+				accept = "application/json"
+			}
+			annotation.Accept = append(annotation.Accept, accept)
+
+		case strings.HasPrefix(line, "@Produce"):
+			produce := strings.TrimSpace(strings.TrimPrefix(line, "@Produce"))
+			if produce == "" {
+				produce = "application/json"
+			}
+			annotation.Produce = append(annotation.Produce, produce)
+
+		case strings.HasPrefix(line, "@Security"):
+			security := strings.TrimSpace(strings.TrimPrefix(line, "@Security"))
+			annotation.Security = append(annotation.Security, security)
+
 		case strings.HasPrefix(line, "@Param"):
 			param := parseParamAnnotation(line)
 			if param != nil {
 				annotation.Parameters = append(annotation.Parameters, *param)
 			}
+
+		case strings.HasPrefix(line, "@Success"):
+			annotation.Success = parseSuccessAnnotation(line)
+
 		case strings.HasPrefix(line, "@Failure"):
 			failure := parseFailureAnnotation(line)
 			if failure != nil {
