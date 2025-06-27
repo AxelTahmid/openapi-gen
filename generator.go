@@ -1,0 +1,593 @@
+package openapi
+
+import (
+	"log/slog"
+	"net/http"
+	"reflect"
+	"runtime"
+	"sort"
+	"strconv"
+	"strings"
+
+	"github.com/go-chi/chi/v5"
+)
+
+// Generator creates OpenAPI specifications from Chi routers.
+type Generator struct {
+	schemaGen *SchemaGenerator
+}
+
+type Config struct {
+	Title          string
+	Description    string
+	Version        string
+	TermsOfService string
+	Server         string
+	Contact        *Contact
+	License        *License
+}
+
+type Contact struct {
+	Name  string
+	URL   string
+	Email string
+}
+
+type License struct {
+	Name string
+	URL  string
+}
+
+type Spec struct {
+	OpenAPI    string                `json:"openapi"`
+	Info       Info                  `json:"info"`
+	Servers    []Server              `json:"servers,omitempty"`
+	Paths      map[string]PathItem   `json:"paths"`
+	Components *Components           `json:"components,omitempty"`
+	Tags       []Tag                 `json:"tags,omitempty"`
+	Security   []map[string][]string `json:"security,omitempty"`
+}
+
+type Info struct {
+	Title          string   `json:"title"`
+	Description    string   `json:"description,omitempty"`
+	TermsOfService string   `json:"termsOfService,omitempty"`
+	Contact        *Contact `json:"contact,omitempty"`
+	License        *License `json:"license,omitempty"`
+	Version        string   `json:"version"`
+}
+
+type Server struct {
+	URL         string `json:"url"`
+	Description string `json:"description,omitempty"`
+}
+
+type PathItem map[string]Operation
+
+type Operation struct {
+	Tags        []string              `json:"tags,omitempty"`
+	Summary     string                `json:"summary,omitempty"`
+	Description string                `json:"description,omitempty"`
+	OperationID string                `json:"operationId,omitempty"`
+	Parameters  []Parameter           `json:"parameters,omitempty"`
+	RequestBody *RequestBody          `json:"requestBody,omitempty"`
+	Responses   map[string]Response   `json:"responses"`
+	Security    []map[string][]string `json:"security,omitempty"`
+}
+
+type Parameter struct {
+	Name        string  `json:"name"`
+	In          string  `json:"in"`
+	Description string  `json:"description,omitempty"`
+	Required    bool    `json:"required,omitempty"`
+	Schema      *Schema `json:"schema,omitempty"`
+}
+
+type RequestBody struct {
+	Description string                     `json:"description,omitempty"`
+	Content     map[string]MediaTypeObject `json:"content"`
+	Required    bool                       `json:"required,omitempty"`
+}
+
+type MediaTypeObject struct {
+	Schema *Schema `json:"schema,omitempty"`
+}
+
+type Response struct {
+	Description string                     `json:"description"`
+	Content     map[string]MediaTypeObject `json:"content,omitempty"`
+}
+
+type Schema struct {
+	Type                 string             `json:"type,omitempty"`
+	Properties           map[string]*Schema `json:"properties,omitempty"`
+	Items                *Schema            `json:"items,omitempty"`
+	Required             []string           `json:"required,omitempty"`
+	AdditionalProperties interface{}        `json:"additionalProperties,omitempty"`
+	Ref                  string             `json:"$ref,omitempty"`
+	Description          string             `json:"description,omitempty"`
+}
+
+type Components struct {
+	Schemas         map[string]Schema         `json:"schemas,omitempty"`
+	SecuritySchemes map[string]SecurityScheme `json:"securitySchemes,omitempty"`
+}
+
+type SecurityScheme struct {
+	Type         string `json:"type"`
+	Scheme       string `json:"scheme,omitempty"`
+	BearerFormat string `json:"bearerFormat,omitempty"`
+	Description  string `json:"description,omitempty"`
+}
+
+type Tag struct {
+	Name        string `json:"name"`
+	Description string `json:"description,omitempty"`
+}
+
+// NewGenerator creates a new OpenAPI generator.
+func NewGenerator() *Generator {
+	slog.Info("[openapi] NewGenerator: initializing OpenAPI generator")
+	return &Generator{
+		schemaGen: NewSchemaGenerator(typeIndex),
+	}
+}
+
+func NewGeneratorWithCache(typeIndex *TypeIndex) *Generator {
+	return &Generator{
+		schemaGen: &SchemaGenerator{
+			schemas:   make(map[string]*Schema),
+			typeIndex: typeIndex,
+		},
+	}
+}
+
+// GenerateSpec creates an OpenAPI 3.1 specification from a Chi router.
+func (g *Generator) GenerateSpec(router chi.Router, cfg Config) Spec {
+	slog.Info("[openapi] GenerateSpec: called", "title", cfg.Title, "version", cfg.Version)
+	spec := Spec{
+		OpenAPI: "3.1.0",
+		Info: Info{
+			Title:          cfg.Title,
+			Version:        cfg.Version,
+			Description:    cfg.Description,
+			TermsOfService: cfg.TermsOfService,
+			Contact: &Contact{
+				Name:  cfg.Contact.Name,
+				URL:   cfg.Contact.URL,
+				Email: cfg.Contact.Email,
+			},
+			License: &License{
+				Name: cfg.License.Name,
+				URL:  cfg.License.URL,
+			},
+		},
+		Paths: make(map[string]PathItem),
+		Components: &Components{
+			Schemas:         make(map[string]Schema),
+			SecuritySchemes: make(map[string]SecurityScheme),
+		},
+	}
+
+	// Add server if configured
+	if cfg.Server != "" {
+		slog.Info("[openapi] GenerateSpec: adding server", "server", cfg.Server)
+		spec.Servers = []Server{{URL: cfg.Server, Description: "API Server"}}
+	}
+
+	slog.Info("[openapi] GenerateSpec: adding security scheme")
+	// Add standard security scheme
+	spec.Components.SecuritySchemes["BearerAuth"] = SecurityScheme{
+		Type:         "http",
+		Scheme:       "bearer",
+		BearerFormat: "JWT",
+		Description:  "JWT token authentication",
+	}
+
+	// Add standard schemas
+	g.addStandardSchemas(&spec)
+
+	// Walk routes and build paths
+	tags := make(map[string]bool)
+	walkFunc := func(method string, route string, handler http.Handler, middlewares ...func(http.Handler) http.Handler) error {
+		// Skip OpenAPI routes
+		if strings.Contains(route, "/swagger") || strings.Contains(route, "/openapi") {
+			return nil
+		}
+		slog.Info("[openapi] GenerateSpec: walking route", "method", method, "route", route)
+		pathKey := convertRouteToOpenAPIPath(route)
+		operation := g.buildOperation(handler, route, method, middlewares)
+
+		// Initialize path if needed
+		if spec.Paths[pathKey] == nil {
+			spec.Paths[pathKey] = make(PathItem)
+		}
+
+		// Add operation
+		spec.Paths[pathKey][strings.ToLower(method)] = operation
+
+		// Collect tags
+		for _, tag := range operation.Tags {
+			tags[tag] = true
+		}
+
+		return nil
+	}
+
+	slog.Info("[openapi] GenerateSpec: starting chi.Walk")
+	// Execute the walk
+	_ = chi.Walk(router, walkFunc)
+
+	slog.Info("[openapi] GenerateSpec: building tags array")
+	// Build tags array
+	spec.Tags = g.buildTags(tags)
+
+	// Add generated schemas
+	for name, schema := range g.schemaGen.GetSchemas() {
+		spec.Components.Schemas[name] = schema
+	}
+
+	slog.Info("[openapi] GenerateSpec: completed", "path_count", len(spec.Paths))
+	return spec
+}
+
+// buildOperation creates an OpenAPI operation from a handler.
+func (g *Generator) buildOperation(
+	handler http.Handler,
+	route, method string,
+	middlewares []func(http.Handler) http.Handler,
+) Operation {
+	slog.Info("[openapi] buildOperation: called", "route", route, "method", method)
+	// Get handler info
+	handlerInfo := g.extractHandlerInfo(handler)
+
+	// Parse annotations if handler info is available
+	var annotations *Annotation
+	if handlerInfo != nil && handlerInfo.File != "" {
+		slog.Info(
+			"buildOperation: parsing annotations",
+			"file",
+			handlerInfo.File,
+			"function",
+			handlerInfo.FunctionName,
+		)
+		annotations = ParseAnnotations(handlerInfo.File, handlerInfo.FunctionName)
+	}
+
+	// Build operation
+	operation := Operation{
+		OperationID: generateOperationID(method, route),
+		Parameters:  []Parameter{}, // Start with empty parameters, will add from route and annotations
+		Responses:   g.buildResponses(annotations),
+	}
+
+	// Add path parameters from route
+	pathParams := extractPathParameters(route)
+	operation.Parameters = append(operation.Parameters, pathParams...)
+
+	// Set summary and description
+	if annotations != nil {
+		operation.Summary = annotations.Summary
+		operation.Description = annotations.Description
+		operation.Tags = annotations.Tags
+
+		// Convert and add parameters from annotations
+		for _, param := range annotations.Parameters {
+			// Skip body parameters - they should be handled as request body, not parameters
+			if param.In == "body" {
+				continue
+			}
+
+			// For non-body parameters (query, header, path), use simple type mapping
+			operation.Parameters = append(operation.Parameters, Parameter{
+				Name:        param.Name,
+				In:          param.In,
+				Description: param.Description,
+				Required:    param.Required,
+				Schema:      &Schema{Type: mapGoTypeToOpenAPI(param.Type)},
+			})
+		}
+	}
+
+	// Add default tag if none specified
+	if len(operation.Tags) == 0 {
+		operation.Tags = []string{extractResourceFromRoute(route)}
+	}
+
+	// Add request body for POST/PUT/PATCH
+	if method == "POST" || method == "PUT" || method == "PATCH" {
+		operation.RequestBody = g.buildRequestBody(annotations)
+	}
+
+	// Determine security requirements
+	if hasJWTMiddleware(middlewares) {
+		operation.Security = []map[string][]string{{"BearerAuth": {}}}
+	}
+
+	slog.Info("[openapi] buildOperation: completed", "operationId", operation.OperationID)
+	return operation
+}
+
+type HandlerInfo struct {
+	File         string
+	FunctionName string
+	Package      string
+}
+
+// extractHandlerInfo gets information about a handler function.
+func (g *Generator) extractHandlerInfo(handler http.Handler) *HandlerInfo {
+	slog.Info("[openapi] extractHandlerInfo: called")
+	handlerValue := reflect.ValueOf(handler)
+	if handlerValue.Kind() != reflect.Func {
+		return nil
+	}
+
+	pc := handlerValue.Pointer()
+	funcInfo := runtime.FuncForPC(pc)
+	if funcInfo == nil {
+		return nil
+	}
+
+	file, _ := funcInfo.FileLine(pc)
+	name := funcInfo.Name()
+
+	// Extract function name from full name
+	if lastDot := strings.LastIndex(name, "."); lastDot != -1 {
+		name = name[lastDot+1:]
+		// Remove -fm suffix if present
+		name = strings.TrimSuffix(name, "-fm")
+	}
+
+	slog.Info("[openapi] extractHandlerInfo: found handler info", "file", file, "function", name)
+	return &HandlerInfo{
+		File:         file,
+		FunctionName: name,
+	}
+}
+
+// buildResponses creates response definitions.
+func (g *Generator) buildResponses(annotations *Annotation) map[string]Response {
+	slog.Info("[openapi] buildResponses: called")
+	responses := make(map[string]Response)
+
+	// Add success response
+	if annotations != nil && annotations.Success != nil {
+		statusCode := strconv.Itoa(annotations.Success.StatusCode)
+		responses[statusCode] = Response{
+			Description: annotations.Success.Description,
+			Content: map[string]MediaTypeObject{
+				"application/json": {
+					Schema: g.generateResponseSchema(annotations.Success.DataType),
+				},
+			},
+		}
+	} else {
+		responses["200"] = Response{
+			Description: "Successful response",
+			Content: map[string]MediaTypeObject{
+				"application/json": {
+					Schema: &Schema{Type: "object"},
+				},
+			},
+		}
+	}
+
+	// Add error responses from annotations
+	if annotations != nil {
+		for _, failure := range annotations.Failures {
+			statusCode := strconv.Itoa(failure.StatusCode)
+			responses[statusCode] = Response{
+				Description: failure.Description,
+				Content: map[string]MediaTypeObject{
+					"application/problem+json": {
+						Schema: &Schema{Ref: "#/components/schemas/ProblemDetails"},
+					},
+				},
+			}
+		}
+	}
+
+	// Add standard error responses if not present
+	standardErrors := map[string]Response{
+		"400": {
+			Description: "Bad Request",
+			Content: map[string]MediaTypeObject{
+				"application/problem+json": {
+					Schema: &Schema{Ref: "#/components/schemas/ProblemDetails"},
+				},
+			},
+		},
+		"401": {
+			Description: "Unauthorized",
+			Content: map[string]MediaTypeObject{
+				"application/problem+json": {
+					Schema: &Schema{Ref: "#/components/schemas/ProblemDetails"},
+				},
+			},
+		},
+		"500": {
+			Description: "Internal Server Error",
+			Content: map[string]MediaTypeObject{
+				"application/problem+json": {
+					Schema: &Schema{Ref: "#/components/schemas/ProblemDetails"},
+				},
+			},
+		},
+	}
+
+	for code, response := range standardErrors {
+		if _, exists := responses[code]; !exists {
+			responses[code] = response
+		}
+	}
+
+	slog.Info("[openapi] buildResponses: completed", "response_count", len(responses))
+	return responses
+}
+
+// buildRequestBody creates request body definition.
+func (g *Generator) buildRequestBody(annotations *Annotation) *RequestBody {
+	slog.Info("[openapi] buildRequestBody: called")
+	var schema *Schema
+	description := "Request body"
+
+	// Try to get from annotations first
+	if annotations != nil {
+		for _, param := range annotations.Parameters {
+			if param.In == "body" {
+				slog.Info("[openapi] buildRequestBody: found body parameter", "type", param.Type)
+				// Generate proper schema for the request body type
+				schema = g.schemaGen.GenerateSchema(param.Type)
+				if param.Description != "" {
+					description = param.Description
+				}
+				break
+			}
+		}
+	}
+
+	// Default schema if no annotation provided
+	if schema == nil {
+		slog.Info("[openapi] buildRequestBody: no body parameter found, using default object schema")
+		schema = &Schema{Type: "object"}
+	}
+
+	return &RequestBody{
+		Description: description,
+		Required:    true,
+		Content: map[string]MediaTypeObject{
+			"application/json": {Schema: schema},
+		},
+	}
+}
+
+// generateResponseSchema creates a response schema.
+func (g *Generator) generateResponseSchema(dataType string) *Schema {
+	slog.Info("[openapi] generateResponseSchema: called", "dataType", dataType)
+	if dataType == "" {
+		return &Schema{Type: "object"}
+	}
+
+	// Handle array types
+	if strings.HasPrefix(dataType, "[]") {
+		itemType := strings.TrimPrefix(dataType, "[]")
+		return &Schema{
+			Type:  "array",
+			Items: g.schemaGen.GenerateSchema(itemType),
+		}
+	}
+
+	// Handle pointer types
+	if strings.HasPrefix(dataType, "*") {
+		cleanType := strings.TrimPrefix(dataType, "*")
+		return g.schemaGen.GenerateSchema(cleanType)
+	}
+
+	return g.schemaGen.GenerateSchema(dataType)
+}
+
+// addStandardSchemas adds predefined schemas.
+func (g *Generator) addStandardSchemas(spec *Spec) {
+	slog.Info("[openapi] addStandardSchemas: adding ProblemDetails schema")
+	spec.Components.Schemas["ProblemDetails"] = Schema{
+		Type: "object",
+		Properties: map[string]*Schema{
+			"type":   {Type: "string", Description: "A URI reference identifying the problem type"},
+			"title":  {Type: "string", Description: "A short, human-readable summary of the problem"},
+			"status": {Type: "integer", Description: "The HTTP status code"},
+			"detail": {Type: "string", Description: "Detailed explanation of the problem"},
+			"instance": {
+				Type:        "string",
+				Description: "A URI reference identifying the specific instance of the problem",
+			},
+		},
+		Required: []string{"type", "title", "status"},
+	}
+}
+
+// buildTags creates tags array from collected tag names.
+func (g *Generator) buildTags(tagNames map[string]bool) []Tag {
+	slog.Info("[openapi] buildTags: called", "tag_count", len(tagNames))
+	var tags []Tag
+	for name := range tagNames {
+		tags = append(tags, Tag{
+			Name:        name,
+			Description: strings.Title(name) + " related operations",
+		})
+	}
+
+	sort.Slice(tags, func(i, j int) bool {
+		return tags[i].Name < tags[j].Name
+	})
+
+	return tags
+}
+
+// Helper functions
+
+// convertRouteToOpenAPIPath converts Chi route to OpenAPI path format.
+func convertRouteToOpenAPIPath(route string) string {
+	// Chi uses {param} format, which is the same as OpenAPI
+	return route
+}
+
+// extractPathParameters extracts path parameters from route.
+func extractPathParameters(route string) []Parameter {
+	var params []Parameter
+	parts := strings.Split(route, "/")
+
+	for _, part := range parts {
+		if strings.HasPrefix(part, "{") && strings.HasSuffix(part, "}") {
+			paramName := strings.Trim(part, "{}")
+			params = append(params, Parameter{
+				Name:     paramName,
+				In:       "path",
+				Required: true,
+				Schema:   &Schema{Type: "string"},
+			})
+		}
+	}
+
+	return params
+}
+
+// generateOperationID creates an operation ID from method and route.
+func generateOperationID(method, route string) string {
+	parts := strings.Split(strings.Trim(route, "/"), "/")
+	var cleanParts []string
+
+	for _, part := range parts {
+		if part != "" && !strings.Contains(part, "{") {
+			cleanParts = append(cleanParts, strings.Title(part))
+		}
+	}
+
+	return strings.ToLower(method) + strings.Join(cleanParts, "")
+}
+
+// extractResourceFromRoute extracts resource name from route.
+func extractResourceFromRoute(route string) string {
+	parts := strings.Split(strings.Trim(route, "/"), "/")
+
+	// Skip common prefixes
+	for _, part := range parts {
+		if part != "" && part != "api" && part != "v1" && !strings.Contains(part, "{") {
+			return part
+		}
+	}
+
+	return "default"
+}
+
+// hasJWTMiddleware checks if JWT middleware is present.
+func hasJWTMiddleware(middlewares []func(http.Handler) http.Handler) bool {
+	for _, mw := range middlewares {
+		funcName := runtime.FuncForPC(reflect.ValueOf(mw).Pointer()).Name()
+		if strings.Contains(funcName, "jwt") ||
+			strings.Contains(funcName, "JWT") ||
+			strings.Contains(funcName, "auth") {
+			return true
+		}
+	}
+	return false
+}
