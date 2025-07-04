@@ -287,7 +287,7 @@ func CreateUserWithService(service UserService) http.HandlerFunc {
 
 ### Parameter Types (`@Param`)
 
-| Location | Example                                                | Description        |
+| Store    | Example                                                | Description        |
 | -------- | ------------------------------------------------------ | ------------------ |
 | `body`   | `@Param user body CreateUserRequest true "User data"`  | Request body       |
 | `path`   | `@Param id path int true "User ID"`                    | URL path parameter |
