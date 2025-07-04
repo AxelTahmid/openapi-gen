@@ -3,11 +3,7 @@ package openapi
 import (
 	"fmt"
 	"go/ast"
-	"go/parser"
-	"go/token"
 	"log/slog"
-	"os"
-	"path/filepath"
 	"strings"
 	"sync"
 )
@@ -28,6 +24,7 @@ func NewSchemaGenerator(opts ...*TypeIndex) *SchemaGenerator {
 		idx = opts[0]
 	} else {
 		// Use global typeIndex if no specific index provided
+		ensureTypeIndex() // Ensure typeIndex is initialized
 		idx = typeIndex
 	}
 
@@ -56,9 +53,9 @@ func (sg *SchemaGenerator) GenerateSchema(typeName string) *Schema {
 	}
 
 	// For basic types, don't use caching - return directly
-	if isBasicType(typeName) {
-		return sg.generateBasicTypeSchema(typeName)
-	}
+	// if isBasicType(typeName) {
+	// 	return sg.generateBasicTypeSchema(typeName)
+	// }
 
 	// 3) Reserve placeholder under lock
 	sg.mutex.Lock()
@@ -233,72 +230,72 @@ func (sg *SchemaGenerator) searchInPackage(packageName, structName string) *Sche
 	return nil
 }
 
-// searchInDirectory searches for a type definition in a directory
-func (sg *SchemaGenerator) searchInDirectory(dir, typeName string) *Schema {
-	slog.Debug("[openapi] searchInDirectory: called", "dir", dir, "typeName", typeName)
-	files, err := filepath.Glob(filepath.Join(dir, "*.go"))
-	if err != nil {
-		slog.Debug("[openapi] searchInDirectory: glob error", "err", err)
-		return nil
-	}
+// // searchInDirectory searches for a type definition in a directory
+// func (sg *SchemaGenerator) searchInDirectory(dir, typeName string) *Schema {
+// 	slog.Debug("[openapi] searchInDirectory: called", "dir", dir, "typeName", typeName)
+// 	files, err := filepath.Glob(filepath.Join(dir, "*.go"))
+// 	if err != nil {
+// 		slog.Debug("[openapi] searchInDirectory: glob error", "err", err)
+// 		return nil
+// 	}
 
-	for _, file := range files {
-		slog.Debug("[openapi] searchInDirectory: parsing file", "file", file)
-		if schema := sg.parseTypeFromFile(file, typeName); schema != nil {
-			slog.Debug("[openapi] searchInDirectory: found schema in file", "file", file)
-			return schema
-		}
-	}
+// 	for _, file := range files {
+// 		slog.Debug("[openapi] searchInDirectory: parsing file", "file", file)
+// 		if schema := sg.parseTypeFromFile(file, typeName); schema != nil {
+// 			slog.Debug("[openapi] searchInDirectory: found schema in file", "file", file)
+// 			return schema
+// 		}
+// 	}
 
-	// Search subdirectories
-	dirs, err := filepath.Glob(filepath.Join(dir, "*"))
-	if err != nil {
-		slog.Debug("[openapi] searchInDirectory: subdir glob error", "err", err)
-		return nil
-	}
+// 	// Search subdirectories
+// 	dirs, err := filepath.Glob(filepath.Join(dir, "*"))
+// 	if err != nil {
+// 		slog.Debug("[openapi] searchInDirectory: subdir glob error", "err", err)
+// 		return nil
+// 	}
 
-	for _, subdir := range dirs {
-		if info, statErr := os.Stat(subdir); statErr == nil && info.IsDir() {
-			// Skip hidden directories (e.g., .git, .vscode)
-			if strings.HasPrefix(info.Name(), ".") {
-				slog.Debug("[openapi] searchInDirectory: skipping hidden dir", "subdir", subdir)
-				continue
-			}
-			slog.Debug("[openapi] searchInDirectory: recursing into subdir", "subdir", subdir)
-			if schema := sg.searchInDirectory(subdir, typeName); schema != nil {
-				return schema
-			}
-		}
-	}
+// 	for _, subdir := range dirs {
+// 		if info, statErr := os.Stat(subdir); statErr == nil && info.IsDir() {
+// 			// Skip hidden directories (e.g., .git, .vscode)
+// 			if strings.HasPrefix(info.Name(), ".") {
+// 				slog.Debug("[openapi] searchInDirectory: skipping hidden dir", "subdir", subdir)
+// 				continue
+// 			}
+// 			slog.Debug("[openapi] searchInDirectory: recursing into subdir", "subdir", subdir)
+// 			if schema := sg.searchInDirectory(subdir, typeName); schema != nil {
+// 				return schema
+// 			}
+// 		}
+// 	}
 
-	return nil
-}
+// 	return nil
+// }
 
-// parseTypeFromFile parses a Go file to find a specific type definition
-func (sg *SchemaGenerator) parseTypeFromFile(filePath, typeName string) *Schema {
-	slog.Debug("[openapi] parseTypeFromFile: called", "filePath", filePath, "typeName", typeName)
-	fset := token.NewFileSet()
-	node, err := parser.ParseFile(fset, filePath, nil, parser.ParseComments)
-	if err != nil {
-		slog.Debug("[openapi] parseTypeFromFile: parse error", "err", err)
-		return nil
-	}
+// // parseTypeFromFile parses a Go file to find a specific type definition
+// func (sg *SchemaGenerator) parseTypeFromFile(filePath, typeName string) *Schema {
+// 	slog.Debug("[openapi] parseTypeFromFile: called", "filePath", filePath, "typeName", typeName)
+// 	fset := token.NewFileSet()
+// 	node, err := parser.ParseFile(fset, filePath, nil, parser.ParseComments)
+// 	if err != nil {
+// 		slog.Debug("[openapi] parseTypeFromFile: parse error", "err", err)
+// 		return nil
+// 	}
 
-	for _, decl := range node.Decls {
-		if genDecl, ok := decl.(*ast.GenDecl); ok && genDecl.Tok == token.TYPE {
-			for _, spec := range genDecl.Specs {
-				if typeSpec, isTypeSpec := spec.(*ast.TypeSpec); isTypeSpec && typeSpec.Name.Name == typeName {
-					if structType, isStructType := typeSpec.Type.(*ast.StructType); isStructType {
-						slog.Debug("[openapi] parseTypeFromFile: found struct type", "typeName", typeName)
-						return sg.convertStructToSchema(structType)
-					}
-				}
-			}
-		}
-	}
+// 	for _, decl := range node.Decls {
+// 		if genDecl, ok := decl.(*ast.GenDecl); ok && genDecl.Tok == token.TYPE {
+// 			for _, spec := range genDecl.Specs {
+// 				if typeSpec, isTypeSpec := spec.(*ast.TypeSpec); isTypeSpec && typeSpec.Name.Name == typeName {
+// 					if structType, isStructType := typeSpec.Type.(*ast.StructType); isStructType {
+// 						slog.Debug("[openapi] parseTypeFromFile: found struct type", "typeName", typeName)
+// 						return sg.convertStructToSchema(structType)
+// 					}
+// 				}
+// 			}
+// 		}
+// 	}
 
-	return nil
-}
+// 	return nil
+// }
 
 // convertStructToSchema converts an AST struct to OpenAPI schema
 func (sg *SchemaGenerator) convertStructToSchema(structType *ast.StructType) *Schema {
@@ -455,68 +452,68 @@ func isBasicType(typeName string) bool {
 	}
 }
 
-// findPackageDirectories dynamically discovers directories containing the specified package
-func (sg *SchemaGenerator) findPackageDirectories(packageName string) []string {
-	var packageDirs []string
+// // findPackageDirectories dynamically discovers directories containing the specified package
+// func (sg *SchemaGenerator) findPackageDirectories(packageName string) []string {
+// 	var packageDirs []string
 
-	dirs := sg.findDirectoriesWithPackage(".", packageName)
-	packageDirs = append(packageDirs, dirs...)
+// 	dirs := sg.findDirectoriesWithPackage(".", packageName)
+// 	packageDirs = append(packageDirs, dirs...)
 
-	return packageDirs
-}
+// 	return packageDirs
+// }
 
-// findDirectoriesWithPackage recursively searches for directories containing files with the given package name
-func (sg *SchemaGenerator) findDirectoriesWithPackage(dir, packageName string) []string {
-	var foundDirs []string
+// // findDirectoriesWithPackage recursively searches for directories containing files with the given package name
+// func (sg *SchemaGenerator) findDirectoriesWithPackage(dir, packageName string) []string {
+// 	var foundDirs []string
 
-	// Check if this directory has files with the target package
-	files, err := filepath.Glob(filepath.Join(dir, "*.go"))
-	if err == nil {
-		for _, file := range files {
-			if sg.fileHasPackage(file, packageName) {
-				foundDirs = append(foundDirs, dir)
-				break
-			}
-		}
-	}
+// 	// Check if this directory has files with the target package
+// 	files, err := filepath.Glob(filepath.Join(dir, "*.go"))
+// 	if err == nil {
+// 		for _, file := range files {
+// 			if sg.fileHasPackage(file, packageName) {
+// 				foundDirs = append(foundDirs, dir)
+// 				break
+// 			}
+// 		}
+// 	}
 
-	// Search subdirectories
-	subdirs, err := filepath.Glob(filepath.Join(dir, "*"))
-	if err == nil {
-		for _, subdir := range subdirs {
-			if info, statErr := os.Stat(subdir); statErr == nil && info.IsDir() {
-				subResults := sg.findDirectoriesWithPackage(subdir, packageName)
-				foundDirs = append(foundDirs, subResults...)
-			}
-		}
-	}
+// 	// Search subdirectories
+// 	subdirs, err := filepath.Glob(filepath.Join(dir, "*"))
+// 	if err == nil {
+// 		for _, subdir := range subdirs {
+// 			if info, statErr := os.Stat(subdir); statErr == nil && info.IsDir() {
+// 				subResults := sg.findDirectoriesWithPackage(subdir, packageName)
+// 				foundDirs = append(foundDirs, subResults...)
+// 			}
+// 		}
+// 	}
 
-	return foundDirs
-}
+// 	return foundDirs
+// }
 
-// fileHasPackage checks if a Go file declares the specified package
-func (sg *SchemaGenerator) fileHasPackage(filePath, packageName string) bool {
-	fset := token.NewFileSet()
-	node, err := parser.ParseFile(fset, filePath, nil, parser.PackageClauseOnly)
-	if err != nil {
-		return false
-	}
+// // fileHasPackage checks if a Go file declares the specified package
+// func (sg *SchemaGenerator) fileHasPackage(filePath, packageName string) bool {
+// 	fset := token.NewFileSet()
+// 	node, err := parser.ParseFile(fset, filePath, nil, parser.PackageClauseOnly)
+// 	if err != nil {
+// 		return false
+// 	}
 
-	return node.Name.Name == packageName
-}
+// 	return node.Name.Name == packageName
+// }
 
 // searchInDirectoryForPackage searches for a type in directories that contain the specified package
-func (sg *SchemaGenerator) searchInDirectoryForPackage(rootDir, packageName, typeName string) *Schema {
-	packageDirs := sg.findDirectoriesWithPackage(rootDir, packageName)
+// func (sg *SchemaGenerator) searchInDirectoryForPackage(rootDir, packageName, typeName string) *Schema {
+// 	packageDirs := sg.findDirectoriesWithPackage(rootDir, packageName)
 
-	for _, dir := range packageDirs {
-		if schema := sg.searchInDirectory(dir, typeName); schema != nil {
-			return schema
-		}
-	}
+// 	for _, dir := range packageDirs {
+// 		if schema := sg.searchInDirectory(dir, typeName); schema != nil {
+// 			return schema
+// 		}
+// 	}
 
-	return nil
-}
+// 	return nil
+// }
 
 // generateBasicTypeSchema creates a schema for basic Go types without caching
 func (sg *SchemaGenerator) generateBasicTypeSchema(typeName string) *Schema {
