@@ -1,6 +1,8 @@
-# OpenApi Gen
+# Chi OpenApi Gen
 
-A production-ready, annotation-driven OpenAPI 3.1 specification generator for Go HTTP services using Chi router. This package automatically generates comprehensive API documentation from your Go code with zero configuration required.
+An annotation-driven OpenAPI 3.1 specification generator for Go HTTP services using Chi router. This package automatically generates comprehensive API documentation from your Go code with zero configuration required.
+
+**About This Project**: This project was initially part of a larger monolith, where we needed immediate documentation. It was using Chi and sqlc with pgx/v5, therefore, this package would have the best support for that tech stack only. If this fits your usecase, feel free to use it. There are a lot of rooms for improvements, but it serves the purpose necessary for us at this point of time. Contributions are welcome, see the [CONTRIBUTING.md](CONTRIBUTING.md) file. This readme.md is AI generated.
 
 [![Go Version](https://img.shields.io/badge/go-%3E%3D1.24-blue.svg)](https://golang.org/)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
@@ -17,6 +19,20 @@ A production-ready, annotation-driven OpenAPI 3.1 specification generator for Go
 -   **🔍 Deep Type Discovery**: Recursively finds and documents all referenced types
 -   **🌐 External Type Support**: Configurable support for third-party library types
 -   **📊 Runtime Generation**: Updates documentation dynamically without restarts
+
+## ⚠️ Current Limitations
+
+As mentioned, this package was extracted from a larger project and has room for improvements:
+
+-   **Chi Router Only**: Currently only supports `go-chi/chi` router (by design)
+-   **Top-Level Functions**: Handlers must be top-level functions, not struct methods
+-   **SQLC/pgx Optimized**: Best performance with SQLC-generated types and pgx/v5
+-   **AST Parsing Limitations**: Complex comment patterns may not be parsed correctly
+-   **Limited Router Support**: No plans to support other routers (Gin, Echo, etc.)
+-   **Type Discovery**: May struggle with deeply nested or complex generic types
+-   **Documentation**: Some edge cases in annotation parsing may need manual workarounds
+
+Despite these limitations, the package serves its core purpose effectively for Chi + SQLC + pgx/v5 projects.
 
 ## 📦 Installation
 
@@ -233,6 +249,244 @@ curl http://localhost:8080/openapi/generate
 
 # Invalidate cache for fresh generation
 curl http://localhost:8080/openapi/invalidate
+```
+
+## 📋 Usage Scenarios
+
+This package supports various deployment and usage patterns. Choose the approach that best fits your project:
+
+### 🚀 Development Mode (Runtime Generation)
+
+Perfect for local development and staging environments:
+
+```go
+func main() {
+    r := chi.NewRouter()
+
+    // Add your API routes
+    r.Route("/api/v1", func(r chi.Router) {
+        r.Get("/users", GetUsers)
+        r.Post("/users", CreateUser)
+    })
+
+    // Add OpenAPI endpoints for development
+    if os.Getenv("ENV") != "production" {
+        config := openapi.Config{
+            Title:   "My API",
+            Version: "1.0.0",
+            Server:  "http://localhost:8080",
+        }
+
+        r.Route("/docs", func(r chi.Router) {
+            r.Get("/openapi.json", openapi.CachedHandler(r, config))
+            r.Get("/", swaggerUIHandler) // Your Swagger UI handler
+        })
+    }
+
+    log.Println("API docs: http://localhost:8080/docs")
+    http.ListenAndServe(":8080", r)
+}
+```
+
+### 🏭 Production Mode (Static File Generation)
+
+Generate static OpenAPI files for production deployment:
+
+```go
+// cmd/generate-docs/main.go
+package main
+
+import (
+    "log"
+    "github.com/AxelTahmid/openapi-gen"
+)
+
+func main() {
+    // Setup your router with all routes
+    r := setupProductionRoutes()
+
+    config := openapi.Config{
+        Title:       "Production API",
+        Version:     "1.0.0",
+        Server:      "https://api.yourdomain.com",
+        Description: "Production API documentation",
+    }
+
+    // Generate static file
+    err := openapi.GenerateOpenAPISpecFile(r, config, "docs/openapi.json", true)
+    if err != nil {
+        log.Fatalf("Failed to generate spec: %v", err)
+    }
+
+    log.Println("✅ Static OpenAPI spec generated at docs/openapi.json")
+}
+```
+
+### 🔄 CI/CD Integration
+
+Integrate documentation generation into your build pipeline:
+
+```yaml
+# .github/workflows/docs.yml
+name: Generate API Documentation
+
+on:
+    push:
+        branches: [main]
+    pull_request:
+        branches: [main]
+
+jobs:
+    generate-docs:
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v3
+
+            - name: Setup Go
+              uses: actions/setup-go@v3
+              with:
+                  go-version: '1.24'
+
+            - name: Generate OpenAPI spec
+              run: |
+                  go run cmd/generate-docs/main.go
+
+            - name: Validate OpenAPI spec
+              run: |
+                  npx @apidevtools/swagger-cli validate docs/openapi.json
+
+            - name: Deploy to GitHub Pages
+              if: github.ref == 'refs/heads/main'
+              uses: peaceiris/actions-gh-pages@v3
+              with:
+                  github_token: ${{ secrets.GITHUB_TOKEN }}
+                  publish_dir: ./docs
+```
+
+### 🧪 Testing Integration
+
+Use in your test suites for API contract testing:
+
+```go
+func TestAPIDocumentation(t *testing.T) {
+    // Setup test router
+    r := setupTestRoutes()
+
+    config := openapi.Config{
+        Title:   "Test API",
+        Version: "1.0.0",
+    }
+
+    // Generate spec
+    handler := openapi.CachedHandler(r, config)
+    req := httptest.NewRequest("GET", "/openapi", nil)
+    w := httptest.NewRecorder()
+    handler(w, req)
+
+    // Validate spec structure
+    var spec openapi.Spec
+    err := json.Unmarshal(w.Body.Bytes(), &spec)
+    require.NoError(t, err)
+
+    // Test specific endpoints are documented
+    assert.Contains(t, spec.Paths, "/api/v1/users")
+    assert.Equal(t, "Test API", spec.Info.Title)
+}
+
+func TestAPIContractCompliance(t *testing.T) {
+    // Ensure your API responses match the generated schema
+    // Use tools like go-swagger validator or custom validation
+}
+```
+
+### 🏢 Microservices Architecture
+
+Generate documentation for multiple services:
+
+```go
+// Service A
+func setupUserService() *chi.Mux {
+    r := chi.NewRouter()
+    r.Route("/api/v1/users", func(r chi.Router) {
+        r.Get("/", GetUsers)
+        r.Post("/", CreateUser)
+    })
+    return r
+}
+
+// Service B
+func setupOrderService() *chi.Mux {
+    r := chi.NewRouter()
+    r.Route("/api/v1/orders", func(r chi.Router) {
+        r.Get("/", GetOrders)
+        r.Post("/", CreateOrder)
+    })
+    return r
+}
+
+// Generate separate specs for each service
+func generateServiceDocs() {
+    services := map[string]*chi.Mux{
+        "user-service":  setupUserService(),
+        "order-service": setupOrderService(),
+    }
+
+    for name, router := range services {
+        config := openapi.Config{
+            Title:   fmt.Sprintf("%s API", strings.Title(name)),
+            Version: "1.0.0",
+            Server:  fmt.Sprintf("https://%s.api.company.com", name),
+        }
+
+        filename := fmt.Sprintf("docs/%s-openapi.json", name)
+        err := openapi.GenerateOpenAPISpecFile(router, config, filename, true)
+        if err != nil {
+            log.Printf("Failed to generate %s docs: %v", name, err)
+        }
+    }
+}
+```
+
+### 🔧 Custom Middleware Integration
+
+Works seamlessly with Chi middleware:
+
+```go
+func main() {
+    r := chi.NewRouter()
+
+    // Global middleware
+    r.Use(middleware.Logger)
+    r.Use(middleware.Recoverer)
+    r.Use(middleware.RequestID)
+    r.Use(corsMiddleware)
+
+    // API routes with specific middleware
+    r.Route("/api/v1", func(r chi.Router) {
+        r.Use(authMiddleware)      // JWT authentication
+        r.Use(rateLimitMiddleware) // Rate limiting
+        r.Use(metricsMiddleware)   // Prometheus metrics
+
+        r.Get("/users", GetUsers)
+        r.Post("/users", CreateUser)
+    })
+
+    // Documentation routes (no auth required)
+    r.Route("/docs", func(r chi.Router) {
+        r.Use(middleware.BasicAuth("docs", map[string]string{
+            "admin": "secret", // Basic auth for docs
+        }))
+
+        config := openapi.Config{
+            Title:   "Protected API",
+            Version: "1.0.0",
+        }
+
+        r.Get("/openapi.json", openapi.CachedHandler(r, config))
+    })
+
+    http.ListenAndServe(":8080", r)
+}
 ```
 
 ## 🎯 Why Top-Level Functions?
@@ -699,12 +953,7 @@ go test -bench=BenchmarkGenerateSpec ./pkg/openapi
 
 ### Contributing Guidelines
 
-1. **Fork the repository** and create a feature branch
-2. **Write tests** for new functionality
-3. **Ensure all tests pass** and maintain >90% coverage
-4. **Follow Go conventions** and run `golangci-lint`
-5. **Update documentation** for any API changes
-6. **Submit a pull request** with a clear description
+See the [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ### Adding New Features
 
@@ -726,32 +975,40 @@ When adding new features:
 
 ## 🚀 Roadmap
 
-### Current Priorities
+### Immediate Improvements (Community Contributions Welcome)
+
+-   [ ] **Better Error Messages**: Improve AST parsing error reporting and debugging
+-   [ ] **Enhanced Type Support**: Better support for generics and complex nested types
+-   [ ] **Documentation**: More examples and edge case handling
+-   [ ] **Performance**: Optimize type discovery for large codebases
+-   [ ] **Testing**: Expand test coverage for edge cases
+
+### Future Possibilities (Not Guaranteed)
 
 -   [ ] **OpenAPI 3.1 Full Compliance**: Complete OpenAPI 3.1 specification support
--   [ ] **Enhanced Type Support**: Better support for generics and complex types
--   [ ] **Plugin System**: Extensible plugin architecture for custom processing
--   [ ] **Performance Optimizations**: Further caching and memory optimizations
--   [ ] **Documentation Generator**: Generate markdown documentation from specs
-
-### Future Enhancements
-
--   [ ] **Multiple Router Support**: Support for other Go HTTP routers
--   [ ] **GraphQL Support**: Generate OpenAPI specs from GraphQL schemas
 -   [ ] **Validation Integration**: Runtime request/response validation
 -   [ ] **Mock Server Generation**: Generate mock servers from specs
--   [ ] **Client Generation**: Generate Go clients from OpenAPI specs
+-   [ ] **Better SQLC Integration**: Native support for more SQLC patterns
+
+### Explicitly Not Planned
+
+-   ❌ **Multiple Router Support**: This package is Chi-specific by design
+-   ❌ **GraphQL Support**: Out of scope for this project
+-   ❌ **Client Generation**: Use existing OpenAPI client generators
+-   ❌ **Struct Method Support**: AST limitations make this impractical
+
+**Note**: This project serves a specific need (Chi + SQLC + pgx/v5). Major feature additions should align with this core use case. For other routers or frameworks, consider using more general-purpose OpenAPI generators.
 
 ## 📝 Changelog
 
-### v1.0.0 (Latest)
+### v0.1 (Latest)
 
 -   ✨ Initial public release
 -   🚀 Full OpenAPI 3.1 support
 -   ⚡ High-performance type indexing
 -   📚 Comprehensive documentation
 -   🧪 Extensive test coverage
--   🔧 Production-ready stability
+-   🔧 Stable core functionality
 
 ## 🆘 Support & Community
 

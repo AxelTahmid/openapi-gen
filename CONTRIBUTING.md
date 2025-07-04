@@ -254,7 +254,7 @@ OpenAPI generation fails when using pointer to slice types
 
 -   Go version: 1.24.5
 -   OS: macOS 14.1
--   OpenApi Gen version: v1.0.0
+-   OpenApi Gen version: v0.1
 
 ### Steps to Reproduce
 
