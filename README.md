@@ -1,10 +1,10 @@
-# OpenAPI Go
+# OpenApi Gen
 
 A production-ready, annotation-driven OpenAPI 3.1 specification generator for Go HTTP services using Chi router. This package automatically generates comprehensive API documentation from your Go code with zero configuration required.
 
 [![Go Version](https://img.shields.io/badge/go-%3E%3D1.21-blue.svg)](https://golang.org/)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
-[![Go Report Card](https://goreportcard.com/badge/github.com/yourusername/openapi-go)](https://goreportcard.com/report/github.com/yourusername/openapi-go)
+[![Go Report Card](https://goreportcard.com/badge/github.com/AxelTahmid/openapi-gen)](https://goreportcard.com/report/github.com/AxelTahmid/openapi-gen)
 
 ## ✨ Features
 
@@ -21,7 +21,7 @@ A production-ready, annotation-driven OpenAPI 3.1 specification generator for Go
 ## 📦 Installation
 
 ```bash
-go get github.com/yourusername/openapi-go
+go get github.com/AxelTahmid/openapi-gen
 ```
 
 ## 🚀 Quick Start
@@ -132,7 +132,7 @@ import (
 
     "github.com/go-chi/chi/v5"
     "github.com/go-chi/chi/v5/middleware"
-    "github.com/yourusername/openapi-go"
+    "github.com/AxelTahmid/openapi-gen"
 )
 
 func main() {
@@ -193,7 +193,7 @@ import (
     "os"
 
     "github.com/go-chi/chi/v5"
-    "github.com/yourusername/openapi-go"
+    "github.com/AxelTahmid/openapi-gen"
 )
 
 func main() {
@@ -643,8 +643,8 @@ openapi.AddExternalKnownType("external.Type", &openapi.Schema{
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/openapi-go.git
-cd openapi-go
+git clone https://github.com/AxelTahmid/openapi-gen.git
+cd openapi-gen
 
 # Install dependencies
 go mod download

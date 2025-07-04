@@ -1,6 +1,6 @@
-# Contributing to OpenAPI Go
+# Contributing to OpenApi Gen
 
-We want to make contributing to OpenAPI Go as easy and transparent as possible, whether it's:
+We want to make contributing to OpenApi Gen as easy and transparent as possible, whether it's:
 
 -   Reporting a bug
 -   Discussing the current state of the code
@@ -29,8 +29,8 @@ We use GitHub to host code, to track issues and feature requests, as well as acc
 
 ```bash
 # Fork and clone the repository
-git clone https://github.com/your-username/openapi-go.git
-cd openapi-go
+git clone https://github.com/AxelTahmid/openapi-gen.git
+cd openapi-gen
 
 # Install dependencies
 go mod download
@@ -254,7 +254,7 @@ OpenAPI generation fails when using pointer to slice types
 
 -   Go version: 1.21.5
 -   OS: macOS 14.1
--   OpenAPI Go version: v1.0.0
+-   OpenApi Gen version: v1.0.0
 
 ### Steps to Reproduce
 
@@ -400,9 +400,9 @@ Contributors will be recognized in:
 
 ### Project Resources
 
--   [Project Issues](https://github.com/yourusername/openapi-go/issues)
--   [Project Discussions](https://github.com/yourusername/openapi-go/discussions)
--   [Project Wiki](https://github.com/yourusername/openapi-go/wiki)
+-   [Project Issues](https://github.com/AxelTahmid/openapi-gen/issues)
+-   [Project Discussions](https://github.com/AxelTahmid/openapi-gen/discussions)
+-   [Project Wiki](https://github.com/AxelTahmid/openapi-gen/wiki)
 
 ## Questions?
 
@@ -416,4 +416,4 @@ We're here to help make your contribution experience great!
 
 ---
 
-Thank you for contributing to OpenAPI Go! 🎉
+Thank you for contributing to OpenApi Gen! 🎉
