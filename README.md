@@ -1001,7 +1001,7 @@ When adding new features:
 
 ## 📝 Changelog
 
-### v0.1 (Latest)
+### v0.1.0 (Latest)
 
 -   ✨ Initial public release
 -   🚀 Full OpenAPI 3.1 support
