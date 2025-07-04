@@ -21,7 +21,7 @@ We use GitHub to host code, to track issues and feature requests, as well as acc
 
 ## Prerequisites
 
--   Go 1.21 or higher
+-   Go 1.24 or higher
 -   Git
 -   golangci-lint (for linting)
 
@@ -252,7 +252,7 @@ OpenAPI generation fails when using pointer to slice types
 
 ### Environment
 
--   Go version: 1.21.5
+-   Go version: 1.24.5
 -   OS: macOS 14.1
 -   OpenApi Gen version: v1.0.0
 

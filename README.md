@@ -2,7 +2,7 @@
 
 A production-ready, annotation-driven OpenAPI 3.1 specification generator for Go HTTP services using Chi router. This package automatically generates comprehensive API documentation from your Go code with zero configuration required.
 
-[![Go Version](https://img.shields.io/badge/go-%3E%3D1.21-blue.svg)](https://golang.org/)
+[![Go Version](https://img.shields.io/badge/go-%3E%3D1.24-blue.svg)](https://golang.org/)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Go Report Card](https://goreportcard.com/badge/github.com/AxelTahmid/openapi-gen)](https://goreportcard.com/report/github.com/AxelTahmid/openapi-gen)
 
@@ -636,7 +636,7 @@ openapi.AddExternalKnownType("external.Type", &openapi.Schema{
 
 ### Prerequisites
 
--   Go 1.21 or higher
+-   Go 1.24 or higher
 -   Git
 
 ### Setting Up Development Environment
