@@ -31,14 +31,71 @@ func ensureTypeIndex() {
 
 		slog.Debug("[openapi] cache.go: typeIndex built, setting externalKnownTypes")
 		typeIndex.externalKnownTypes = map[string]*Schema{
-			"json.RawMessage":    {Type: "object", Description: "raw json byte slice, used for dynamic JSON data"},
-			"pgtype.Numeric":     {Type: "number", Description: "external type: postgres numeric"},
-			"pgtype.Interval":    {Type: "string", Description: "external type: postgres interval"},
-			"pgtype.Timestamptz": {Type: "date-time", Description: "external type: postgres timezone aware timestamp"},
-			"pgtype.Timestamp":   {Type: "date-time", Description: "external type: postgres timestamp"},
-			"pgtype.UUID":        {Type: "string", Description: "external type: postgres uuid type"},
-			"pgtype.JSONB":       {Type: "object", Description: "external type: postgres JSONB"},
-			"pgtype.JSON":        {Type: "object", Description: "external type: postgres JSON"},
+			// JSON and raw data types
+			"json.RawMessage": {Type: "object", Description: "Raw JSON data", AdditionalProperties: true},
+
+			// PostgreSQL types
+			"pgtype.Numeric":  {Type: "number", Description: "PostgreSQL numeric type"},
+			"pgtype.Interval": {Type: "string", Description: "PostgreSQL interval type"},
+			"pgtype.Timestamptz": {
+				Type:        "string",
+				Format:      "date-time",
+				Description: "PostgreSQL timestamp with timezone",
+			},
+			"pgtype.Timestamp": {Type: "string", Format: "date-time", Description: "PostgreSQL timestamp"},
+			"pgtype.UUID":      {Type: "string", Format: "uuid", Description: "PostgreSQL UUID type"},
+			"pgtype.JSONB":     {Type: "object", Description: "PostgreSQL JSONB type", AdditionalProperties: true},
+			"pgtype.JSON":      {Type: "object", Description: "PostgreSQL JSON type", AdditionalProperties: true},
+
+			// Time types
+			"time.Time": {Type: "string", Format: "date-time", Description: "RFC3339 date-time"},
+			"*time.Time": {
+				OneOf:       []*Schema{{Type: "string", Format: "date-time"}, {Type: "null"}},
+				Description: "Nullable RFC3339 date-time",
+			},
+			"time.Duration": {Type: "string", Description: "Duration string (e.g., '1h30m')"},
+
+			// UUID types
+			"uuid.UUID": {Type: "string", Format: "uuid", Description: "UUID string"},
+			"*uuid.UUID": {
+				OneOf:       []*Schema{{Type: "string", Format: "uuid"}, {Type: "null"}},
+				Description: "Nullable UUID string",
+			},
+
+			// Network types
+			"net.IP":    {Type: "string", Format: "ipv4", Description: "IPv4 address"},
+			"net.IPNet": {Type: "string", Description: "IP network (CIDR notation)"},
+			"url.URL":   {Type: "string", Format: "uri", Description: "URL string"},
+			"*url.URL": {
+				OneOf:       []*Schema{{Type: "string", Format: "uri"}, {Type: "null"}},
+				Description: "Nullable URL string",
+			},
+
+			// Database driver types
+			"sql.NullString": {OneOf: []*Schema{{Type: "string"}, {Type: "null"}}, Description: "Nullable string"},
+			"sql.NullInt64": {
+				OneOf:       []*Schema{{Type: "integer", Format: "int64"}, {Type: "null"}},
+				Description: "Nullable integer",
+			},
+			"sql.NullFloat64": {OneOf: []*Schema{{Type: "number"}, {Type: "null"}}, Description: "Nullable number"},
+			"sql.NullBool":    {OneOf: []*Schema{{Type: "boolean"}, {Type: "null"}}, Description: "Nullable boolean"},
+			"sql.NullTime": {
+				OneOf:       []*Schema{{Type: "string", Format: "date-time"}, {Type: "null"}},
+				Description: "Nullable date-time",
+			},
+
+			// Common Go types that might appear in APIs
+			"big.Int": {Type: "string", Description: "Big integer as string"},
+			"*big.Int": {
+				OneOf:       []*Schema{{Type: "string"}, {Type: "null"}},
+				Description: "Nullable big integer as string",
+			},
+			"decimal.Decimal": {Type: "string", Description: "Decimal number as string"},
+			"*decimal.Decimal": {
+				OneOf:       []*Schema{{Type: "string"}, {Type: "null"}},
+				Description: "Nullable decimal number as string",
+			},
+
 			// Add more external types as needed
 		}
 		// Log the number of types and files indexed

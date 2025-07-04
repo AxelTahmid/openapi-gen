@@ -108,7 +108,14 @@ func ParseAnnotations(filePath, functionName string) *Annotation {
 	}
 
 	slog.Debug("[openapi] ParseAnnotations: parsing annotation comment")
-	return parseAnnotationComment(comment)
+	annotation := parseAnnotationComment(comment)
+
+	// Enhanced annotation parsing for OpenAPI 3.1 features
+	if annotation == nil {
+		annotation = parseOpenAPI31Annotations(comment)
+	}
+
+	return annotation
 }
 
 func parseAnnotationComment(comment string) *Annotation {
@@ -284,5 +291,159 @@ func mapGoTypeToOpenAPI(goType string) string {
 		}
 		// Fallback: treat as object
 		return "object"
+	}
+}
+
+// Enhanced annotation parsing for OpenAPI 3.1 features
+
+// parseOpenAPI31Annotations parses enhanced OpenAPI 3.1 annotations
+func parseOpenAPI31Annotations(comment string) *Annotation {
+	if comment == "" {
+		return nil
+	}
+
+	annotation := &Annotation{
+		Parameters: []ParamAnnotation{},
+		Failures:   []ErrorResponse{},
+	}
+
+	lines := strings.Split(comment, "\n")
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" || !strings.HasPrefix(line, "@") {
+			continue
+		}
+
+		parts := strings.Fields(line)
+		if len(parts) < 2 {
+			continue
+		}
+
+		tag := parts[0]
+		switch tag {
+		case "@Summary":
+			annotation.Summary = strings.Join(parts[1:], " ")
+		case "@Description":
+			annotation.Description = strings.Join(parts[1:], " ")
+		case "@Tags":
+			annotation.Tags = parts[1:]
+		case "@Accept":
+			annotation.Accept = parts[1:]
+		case "@Produce":
+			annotation.Produce = parts[1:]
+		case "@Security":
+			annotation.Security = parts[1:]
+		case "@Param":
+			if param := parseParameter(parts[1:]); param != nil {
+				annotation.Parameters = append(annotation.Parameters, *param)
+			}
+		case "@Success":
+			if success := parseSuccess(parts[1:]); success != nil {
+				annotation.Success = success
+			}
+		case "@Failure", "@Error":
+			if failure := parseFailure(parts[1:]); failure != nil {
+				annotation.Failures = append(annotation.Failures, *failure)
+			}
+		case "@Header":
+			// Enhanced: Parse response headers
+			// @Header X-Request-ID string "Request ID"
+		case "@Example":
+			// Enhanced: Parse examples
+			// @Example request {"name": "John", "email": "john@example.com"}
+		case "@Deprecated":
+			// Enhanced: Mark as deprecated
+		}
+	}
+
+	return annotation
+}
+
+// parseParameter parses enhanced parameter annotations
+func parseParameter(parts []string) *ParamAnnotation {
+	if len(parts) < 4 {
+		return nil
+	}
+
+	param := &ParamAnnotation{
+		Name: parts[0],
+		In:   parts[1],
+		Type: parts[2],
+	}
+
+	// Parse additional attributes
+	for i := 3; i < len(parts); i++ {
+		part := parts[i]
+		if part == "true" && i == 3 {
+			param.Required = true
+		} else if strings.HasPrefix(part, "\"") {
+			// Description
+			desc := strings.Join(parts[i:], " ")
+			param.Description = strings.Trim(desc, "\"")
+			break
+		}
+	}
+
+	return param
+}
+
+// parseSuccess parses success response annotations
+func parseSuccess(parts []string) *SuccessResponse {
+	if len(parts) < 3 {
+		return nil
+	}
+
+	statusCode, err := strconv.Atoi(parts[0])
+	if err != nil {
+		return nil
+	}
+
+	dataType := parts[1]
+	if strings.HasPrefix(dataType, "{") && strings.HasSuffix(dataType, "}") {
+		dataType = strings.Trim(dataType, "{}")
+	}
+
+	description := "Success"
+	if len(parts) > 2 {
+		desc := strings.Join(parts[2:], " ")
+		description = strings.Trim(desc, "\"")
+	}
+
+	return &SuccessResponse{
+		StatusCode:  statusCode,
+		DataType:    dataType,
+		Description: description,
+	}
+}
+
+// parseFailure parses failure response annotations
+func parseFailure(parts []string) *ErrorResponse {
+	if len(parts) < 2 {
+		return nil
+	}
+
+	statusCode, err := strconv.Atoi(parts[0])
+	if err != nil {
+		return nil
+	}
+
+	errorType := "ErrorResponse"
+	description := "Error response"
+
+	if len(parts) > 1 {
+		if strings.HasPrefix(parts[1], "{") && strings.HasSuffix(parts[1], "}") {
+			errorType = strings.Trim(parts[1], "{}")
+		}
+
+		if len(parts) > 2 {
+			desc := strings.Join(parts[2:], " ")
+			description = strings.Trim(desc, "\"")
+		}
+	}
+
+	return &ErrorResponse{
+		StatusCode:  statusCode,
+		Type:        errorType,
+		Description: description,
 	}
 }

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"go/ast"
 	"log/slog"
+	"strconv"
 	"strings"
 	"sync"
 )
@@ -53,9 +54,9 @@ func (sg *SchemaGenerator) GenerateSchema(typeName string) *Schema {
 	}
 
 	// For basic types, don't use caching - return directly
-	// if isBasicType(typeName) {
-	// 	return sg.generateBasicTypeSchema(typeName)
-	// }
+	if isBasicType(typeName) {
+		return sg.generateBasicTypeSchema(typeName)
+	}
 
 	// 3) Reserve placeholder under lock
 	sg.mutex.Lock()
@@ -260,6 +261,13 @@ func (sg *SchemaGenerator) convertStructToSchema(structType *ast.StructType) *Sc
 
 		// Convert field type to schema
 		fieldSchema := sg.convertFieldType(field.Type)
+
+		// Apply OpenAPI 3.1 enhancements from struct tags
+		if field.Tag != nil {
+			tag := strings.Trim(field.Tag.Value, "`")
+			sg.applyEnhancedTags(fieldSchema, tag)
+		}
+
 		schema.Properties[jsonName] = fieldSchema
 
 		// Ensure referenced types are generated (this ensures nested schemas are added to components)
@@ -293,44 +301,192 @@ func (sg *SchemaGenerator) convertStructToSchema(structType *ast.StructType) *Sc
 // convertFieldType converts an AST type to OpenAPI schema
 func (sg *SchemaGenerator) convertFieldType(expr ast.Expr) *Schema {
 	slog.Debug("[openapi] convertFieldType: called")
+	var goType string
+
 	switch t := expr.(type) {
 	case *ast.Ident:
 		slog.Debug("[openapi] convertFieldType: Ident type", "name", t.Name)
+		goType = t.Name
 		// Check if it's a basic type first
 		basicType := mapGoTypeToOpenAPI(t.Name)
 		if basicType != "object" {
-			return &Schema{Type: basicType}
+			schema := &Schema{Type: basicType}
+			sg.enhanceSchemaBasedOnGoType(schema, goType)
+			return schema
 		}
 		// For custom types, always try to generate schema (even if t.Obj is nil)
 		// This handles types from other packages better
 		return sg.GenerateSchema(t.Name)
 	case *ast.StarExpr:
 		slog.Debug("[openapi] convertFieldType: StarExpr (pointer) type")
-		return sg.convertFieldType(t.X)
+		baseSchema := sg.convertFieldType(t.X)
+		// Get the underlying type name for enhancement
+		if ident, ok := t.X.(*ast.Ident); ok {
+			goType = "*" + ident.Name
+		} else if sel, ok := t.X.(*ast.SelectorExpr); ok {
+			if pkg, ok := sel.X.(*ast.Ident); ok {
+				goType = "*" + pkg.Name + "." + sel.Sel.Name
+			}
+		}
+		sg.enhanceSchemaBasedOnGoType(baseSchema, goType)
+		return baseSchema
 	case *ast.ArrayType:
 		slog.Debug("[openapi] convertFieldType: ArrayType")
-		return &Schema{
+		elemSchema := sg.convertFieldType(t.Elt)
+		schema := &Schema{
 			Type:  "array",
-			Items: sg.convertFieldType(t.Elt),
+			Items: elemSchema,
 		}
+		// Get element type for enhancement
+		if ident, ok := t.Elt.(*ast.Ident); ok {
+			goType = "[]" + ident.Name
+		}
+		sg.enhanceSchemaBasedOnGoType(schema, goType)
+		return schema
 	case *ast.SelectorExpr:
 		slog.Debug("[openapi] convertFieldType: SelectorExpr", "sel", t.Sel.Name)
 		// Handle qualified types like json.RawMessage, time.Time, etc.
 		if ident, ok := t.X.(*ast.Ident); ok {
 			typeName := ident.Name + "." + t.Sel.Name
+			goType = typeName
 			slog.Debug("[openapi] convertFieldType: generating schema for qualified type", "typeName", typeName)
-			return sg.GenerateSchema(typeName)
+			schema := sg.GenerateSchema(typeName)
+			sg.enhanceSchemaBasedOnGoType(schema, goType)
+			return schema
 		}
 	case *ast.MapType:
 		slog.Debug("[openapi] convertFieldType: MapType")
-		return &Schema{Type: "object", AdditionalProperties: sg.convertFieldType(t.Value)}
+		schema := &Schema{Type: "object", AdditionalProperties: sg.convertFieldType(t.Value)}
+		goType = "map[string]interface{}" // simplified
+		sg.enhanceSchemaBasedOnGoType(schema, goType)
+		return schema
 	case *ast.InterfaceType:
 		slog.Debug("[openapi] convertFieldType: InterfaceType")
-		return &Schema{Type: "object"}
+		schema := &Schema{Type: "object"}
+		goType = "interface{}"
+		sg.enhanceSchemaBasedOnGoType(schema, goType)
+		return schema
 	}
 
 	slog.Debug("[openapi] convertFieldType: unknown type, defaulting to object")
 	return &Schema{Type: "object"}
+}
+
+// applyEnhancedTags applies OpenAPI 3.1 metadata from struct tags to a schema
+func (sg *SchemaGenerator) applyEnhancedTags(schema *Schema, tag string) {
+	// Parse openapi tag for enhanced features
+	if openapiTag := sg.extractTag(tag, "openapi"); openapiTag != "" {
+		parts := strings.Split(openapiTag, ",")
+		for _, part := range parts {
+			part = strings.TrimSpace(part)
+			if strings.Contains(part, "=") {
+				kv := strings.SplitN(part, "=", 2)
+				key, value := strings.TrimSpace(kv[0]), strings.TrimSpace(kv[1])
+
+				switch key {
+				case "format":
+					schema.Format = value
+				case "pattern":
+					schema.Pattern = value
+				case "example":
+					schema.Example = value
+				case "title":
+					schema.Title = value
+				case "deprecated":
+					if value == "true" {
+						deprecated := true
+						schema.Deprecated = &deprecated
+					}
+				case "readOnly":
+					if value == "true" {
+						readOnly := true
+						schema.ReadOnly = &readOnly
+					}
+				case "writeOnly":
+					if value == "true" {
+						writeOnly := true
+						schema.WriteOnly = &writeOnly
+					}
+				case "minimum":
+					if min, err := strconv.ParseFloat(value, 64); err == nil {
+						schema.Minimum = &min
+					}
+				case "maximum":
+					if max, err := strconv.ParseFloat(value, 64); err == nil {
+						schema.Maximum = &max
+					}
+				case "minLength":
+					if minLen, err := strconv.Atoi(value); err == nil {
+						schema.MinLength = &minLen
+					}
+				case "maxLength":
+					if maxLen, err := strconv.Atoi(value); err == nil {
+						schema.MaxLength = &maxLen
+					}
+				case "minItems":
+					if minItems, err := strconv.Atoi(value); err == nil {
+						schema.MinItems = &minItems
+					}
+				case "maxItems":
+					if maxItems, err := strconv.Atoi(value); err == nil {
+						schema.MaxItems = &maxItems
+					}
+				case "uniqueItems":
+					if value == "true" {
+						uniqueItems := true
+						schema.UniqueItems = &uniqueItems
+					}
+				case "enum":
+					// Parse pipe-separated enum values
+					enumValues := strings.Split(value, "|")
+					schema.Enum = make([]interface{}, len(enumValues))
+					for i, v := range enumValues {
+						schema.Enum[i] = strings.TrimSpace(v)
+					}
+				case "default":
+					schema.Default = value
+				}
+			}
+		}
+	}
+
+	// Parse validate tag for additional constraints
+	if validateTag := sg.extractTag(tag, "validate"); validateTag != "" {
+		// Support common validation tags
+		if strings.Contains(validateTag, "email") {
+			schema.Format = "email"
+		}
+		if strings.Contains(validateTag, "uuid") {
+			schema.Format = "uuid"
+		}
+		if strings.Contains(validateTag, "uri") {
+			schema.Format = "uri"
+		}
+		if strings.Contains(validateTag, "url") {
+			schema.Format = "uri"
+		}
+	}
+
+	// Parse binding tag for additional format hints
+	if bindingTag := sg.extractTag(tag, "binding"); bindingTag != "" {
+		if strings.Contains(bindingTag, "email") {
+			schema.Format = "email"
+		}
+		if strings.Contains(bindingTag, "uuid") {
+			schema.Format = "uuid"
+		}
+	}
+}
+
+// extractTag extracts a specific tag value from a struct tag string
+func (sg *SchemaGenerator) extractTag(tag, key string) string {
+	for _, part := range strings.Split(tag, " ") {
+		if strings.HasPrefix(part, key+":") {
+			value := strings.Trim(part[len(key)+1:], "\"")
+			return value
+		}
+	}
+	return ""
 }
 
 // Helper functions
@@ -414,5 +570,72 @@ func (sg *SchemaGenerator) generateBasicTypeSchema(typeName string) *Schema {
 	return &Schema{
 		Type:        basicType,
 		Description: "basic Go type",
+	}
+}
+
+// enhanceSchemaBasedOnGoType enhances a schema based on Go type information
+func (sg *SchemaGenerator) enhanceSchemaBasedOnGoType(schema *Schema, goType string) {
+	// Add format hints for common Go types
+	switch goType {
+	case "time.Time", "*time.Time":
+		schema.Format = "date-time"
+	case "uuid.UUID", "*uuid.UUID":
+		schema.Format = "uuid"
+	case "url.URL", "*url.URL":
+		schema.Format = "uri"
+	case "net.IP":
+		schema.Format = "ipv4"
+	case "json.RawMessage":
+		// For json.RawMessage, allow any JSON structure
+		schema.Type = "object"
+		schema.Description = "Raw JSON data"
+		schema.AdditionalProperties = true
+	}
+
+	// Handle slice and array types
+	if strings.HasPrefix(goType, "[]") {
+		elementType := strings.TrimPrefix(goType, "[]")
+		if elementType == "string" {
+			// For string arrays, add some sensible defaults
+			uniqueItems := true
+			schema.UniqueItems = &uniqueItems
+		}
+	}
+
+	// Handle pointer types by removing nullability constraints if applicable
+	if strings.HasPrefix(goType, "*") {
+		// Pointer types are typically nullable, but OpenAPI 3.1 handles this differently
+		// In OpenAPI 3.1, we can use oneOf with null type for nullable fields
+		if schema.Type != "" && schema.Type != "object" {
+			// Create a oneOf schema with the original type and null
+			originalSchema := &Schema{
+				Type:        schema.Type,
+				Format:      schema.Format,
+				Pattern:     schema.Pattern,
+				Minimum:     schema.Minimum,
+				Maximum:     schema.Maximum,
+				MinLength:   schema.MinLength,
+				MaxLength:   schema.MaxLength,
+				Enum:        schema.Enum,
+				Example:     schema.Example,
+				Description: schema.Description,
+			}
+
+			// Clear the original schema and set up oneOf
+			schema.Type = ""
+			schema.Format = ""
+			schema.Pattern = ""
+			schema.Minimum = nil
+			schema.Maximum = nil
+			schema.MinLength = nil
+			schema.MaxLength = nil
+			schema.Enum = nil
+			schema.Example = nil
+
+			schema.OneOf = []*Schema{
+				originalSchema,
+				{Type: "null"},
+			}
+		}
 	}
 }
