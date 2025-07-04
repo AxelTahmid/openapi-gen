@@ -127,7 +127,7 @@ type Tag struct {
 
 // NewGenerator creates a new OpenAPI generator.
 func NewGenerator() *Generator {
-	slog.Info("[openapi] NewGenerator: initializing OpenAPI generator")
+	slog.Debug("[openapi] NewGenerator: initializing OpenAPI generator")
 	return &Generator{
 		schemaGen: NewSchemaGenerator(typeIndex),
 	}
@@ -144,7 +144,7 @@ func NewGeneratorWithCache(typeIndex *TypeIndex) *Generator {
 
 // GenerateSpec creates an OpenAPI 3.1 specification from a Chi router.
 func (g *Generator) GenerateSpec(router chi.Router, cfg Config) Spec {
-	slog.Info("[openapi] GenerateSpec: called", "title", cfg.Title, "version", cfg.Version)
+	slog.Debug("[openapi] GenerateSpec: called", "title", cfg.Title, "version", cfg.Version)
 	spec := Spec{
 		OpenAPI: "3.1.0",
 		Info: Info{
@@ -152,15 +152,8 @@ func (g *Generator) GenerateSpec(router chi.Router, cfg Config) Spec {
 			Version:        cfg.Version,
 			Description:    cfg.Description,
 			TermsOfService: cfg.TermsOfService,
-			Contact: &Contact{
-				Name:  cfg.Contact.Name,
-				URL:   cfg.Contact.URL,
-				Email: cfg.Contact.Email,
-			},
-			License: &License{
-				Name: cfg.License.Name,
-				URL:  cfg.License.URL,
-			},
+			Contact:        cfg.Contact,
+			License:        cfg.License,
 		},
 		Paths: make(map[string]PathItem),
 		Components: &Components{
@@ -171,11 +164,11 @@ func (g *Generator) GenerateSpec(router chi.Router, cfg Config) Spec {
 
 	// Add server if configured
 	if cfg.Server != "" {
-		slog.Info("[openapi] GenerateSpec: adding server", "server", cfg.Server)
+		slog.Debug("[openapi] GenerateSpec: adding server", "server", cfg.Server)
 		spec.Servers = []Server{{URL: cfg.Server, Description: "API Server"}}
 	}
 
-	slog.Info("[openapi] GenerateSpec: adding security scheme")
+	slog.Debug("[openapi] GenerateSpec: adding security scheme")
 	// Add standard security scheme
 	spec.Components.SecuritySchemes["BearerAuth"] = SecurityScheme{
 		Type:         "http",
@@ -194,7 +187,7 @@ func (g *Generator) GenerateSpec(router chi.Router, cfg Config) Spec {
 		if strings.Contains(route, "/swagger") || strings.Contains(route, "/openapi") {
 			return nil
 		}
-		slog.Info("[openapi] GenerateSpec: walking route", "method", method, "route", route)
+		slog.Debug("[openapi] GenerateSpec: walking route", "method", method, "route", route)
 		pathKey := convertRouteToOpenAPIPath(route)
 		operation := g.buildOperation(handler, route, method, middlewares)
 
@@ -214,11 +207,11 @@ func (g *Generator) GenerateSpec(router chi.Router, cfg Config) Spec {
 		return nil
 	}
 
-	slog.Info("[openapi] GenerateSpec: starting chi.Walk")
+	slog.Debug("[openapi] GenerateSpec: starting chi.Walk")
 	// Execute the walk
 	_ = chi.Walk(router, walkFunc)
 
-	slog.Info("[openapi] GenerateSpec: building tags array")
+	slog.Debug("[openapi] GenerateSpec: building tags array")
 	// Build tags array
 	spec.Tags = g.buildTags(tags)
 
@@ -227,7 +220,7 @@ func (g *Generator) GenerateSpec(router chi.Router, cfg Config) Spec {
 		spec.Components.Schemas[name] = schema
 	}
 
-	slog.Info("[openapi] GenerateSpec: completed", "path_count", len(spec.Paths))
+	slog.Debug("[openapi] GenerateSpec: completed", "path_count", len(spec.Paths))
 	return spec
 }
 
@@ -237,14 +230,14 @@ func (g *Generator) buildOperation(
 	route, method string,
 	middlewares []func(http.Handler) http.Handler,
 ) Operation {
-	slog.Info("[openapi] buildOperation: called", "route", route, "method", method)
+	slog.Debug("[openapi] buildOperation: called", "route", route, "method", method)
 	// Get handler info
 	handlerInfo := g.extractHandlerInfo(handler)
 
 	// Parse annotations if handler info is available
 	var annotations *Annotation
 	if handlerInfo != nil && handlerInfo.File != "" {
-		slog.Info(
+		slog.Debug(
 			"buildOperation: parsing annotations",
 			"file",
 			handlerInfo.File,
@@ -304,7 +297,7 @@ func (g *Generator) buildOperation(
 		operation.Security = []map[string][]string{{"BearerAuth": {}}}
 	}
 
-	slog.Info("[openapi] buildOperation: completed", "operationId", operation.OperationID)
+	slog.Debug("[openapi] buildOperation: completed", "operationId", operation.OperationID)
 	return operation
 }
 
@@ -316,7 +309,7 @@ type HandlerInfo struct {
 
 // extractHandlerInfo gets information about a handler function.
 func (g *Generator) extractHandlerInfo(handler http.Handler) *HandlerInfo {
-	slog.Info("[openapi] extractHandlerInfo: called")
+	slog.Debug("[openapi] extractHandlerInfo: called")
 	handlerValue := reflect.ValueOf(handler)
 	if handlerValue.Kind() != reflect.Func {
 		return nil
@@ -338,7 +331,7 @@ func (g *Generator) extractHandlerInfo(handler http.Handler) *HandlerInfo {
 		name = strings.TrimSuffix(name, "-fm")
 	}
 
-	slog.Info("[openapi] extractHandlerInfo: found handler info", "file", file, "function", name)
+	slog.Debug("[openapi] extractHandlerInfo: found handler info", "file", file, "function", name)
 	return &HandlerInfo{
 		File:         file,
 		FunctionName: name,
@@ -347,7 +340,7 @@ func (g *Generator) extractHandlerInfo(handler http.Handler) *HandlerInfo {
 
 // buildResponses creates response definitions.
 func (g *Generator) buildResponses(annotations *Annotation) map[string]Response {
-	slog.Info("[openapi] buildResponses: called")
+	slog.Debug("[openapi] buildResponses: called")
 	responses := make(map[string]Response)
 
 	// Add success response
@@ -421,13 +414,13 @@ func (g *Generator) buildResponses(annotations *Annotation) map[string]Response 
 		}
 	}
 
-	slog.Info("[openapi] buildResponses: completed", "response_count", len(responses))
+	slog.Debug("[openapi] buildResponses: completed", "response_count", len(responses))
 	return responses
 }
 
 // buildRequestBody creates request body definition.
 func (g *Generator) buildRequestBody(annotations *Annotation) *RequestBody {
-	slog.Info("[openapi] buildRequestBody: called")
+	slog.Debug("[openapi] buildRequestBody: called")
 	var schema *Schema
 	description := "Request body"
 
@@ -435,7 +428,7 @@ func (g *Generator) buildRequestBody(annotations *Annotation) *RequestBody {
 	if annotations != nil {
 		for _, param := range annotations.Parameters {
 			if param.In == "body" {
-				slog.Info("[openapi] buildRequestBody: found body parameter", "type", param.Type)
+				slog.Debug("[openapi] buildRequestBody: found body parameter", "type", param.Type)
 				// Generate proper schema for the request body type
 				schema = g.schemaGen.GenerateSchema(param.Type)
 				if param.Description != "" {
@@ -448,7 +441,7 @@ func (g *Generator) buildRequestBody(annotations *Annotation) *RequestBody {
 
 	// Default schema if no annotation provided
 	if schema == nil {
-		slog.Info("[openapi] buildRequestBody: no body parameter found, using default object schema")
+		slog.Debug("[openapi] buildRequestBody: no body parameter found, using default object schema")
 		schema = &Schema{Type: "object"}
 	}
 
@@ -463,7 +456,7 @@ func (g *Generator) buildRequestBody(annotations *Annotation) *RequestBody {
 
 // generateResponseSchema creates a response schema.
 func (g *Generator) generateResponseSchema(dataType string) *Schema {
-	slog.Info("[openapi] generateResponseSchema: called", "dataType", dataType)
+	slog.Debug("[openapi] generateResponseSchema: called", "dataType", dataType)
 	if dataType == "" {
 		return &Schema{Type: "object"}
 	}
@@ -488,7 +481,7 @@ func (g *Generator) generateResponseSchema(dataType string) *Schema {
 
 // addStandardSchemas adds predefined schemas.
 func (g *Generator) addStandardSchemas(spec *Spec) {
-	slog.Info("[openapi] addStandardSchemas: adding ProblemDetails schema")
+	slog.Debug("[openapi] addStandardSchemas: adding ProblemDetails schema")
 	spec.Components.Schemas["ProblemDetails"] = Schema{
 		Type: "object",
 		Properties: map[string]*Schema{
@@ -507,7 +500,7 @@ func (g *Generator) addStandardSchemas(spec *Spec) {
 
 // buildTags creates tags array from collected tag names.
 func (g *Generator) buildTags(tagNames map[string]bool) []Tag {
-	slog.Info("[openapi] buildTags: called", "tag_count", len(tagNames))
+	slog.Debug("[openapi] buildTags: called", "tag_count", len(tagNames))
 	var tags []Tag
 	for name := range tagNames {
 		tags = append(tags, Tag{

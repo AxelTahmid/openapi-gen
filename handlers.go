@@ -12,7 +12,7 @@ import (
 func CachedHandler(router chi.Router, cfg Config) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ensureTypeIndex()
-		slog.Info("[openapi] CachedHandler: checking cache validity")
+		slog.Debug("[openapi] CachedHandler: checking cache validity")
 		refresh := r.URL.Query().Get("refresh") == "true"
 
 		cacheMutex.RLock()
@@ -21,12 +21,12 @@ func CachedHandler(router chi.Router, cfg Config) http.HandlerFunc {
 		cacheMutex.RUnlock()
 
 		if isValid {
-			slog.Info("[openapi] CachedHandler: cache hit, serving cached OpenAPI spec")
+			slog.Debug("[openapi] CachedHandler: cache hit, serving cached OpenAPI spec")
 			writeSpec(w, cachedSpec)
 			return
 		}
 
-		slog.Info("[openapi] CachedHandler: cache miss or refresh requested, regenerating OpenAPI spec")
+		slog.Debug("[openapi] CachedHandler: cache miss or refresh requested, regenerating OpenAPI spec")
 		generator := NewGeneratorWithCache(typeIndex)
 		newSpec := generator.GenerateSpec(router, cfg)
 
@@ -35,7 +35,7 @@ func CachedHandler(router chi.Router, cfg Config) http.HandlerFunc {
 		cacheValid = true
 		cacheMutex.Unlock()
 
-		slog.Info("[openapi] CachedHandler: cache updated, serving new OpenAPI spec")
+		slog.Debug("[openapi] CachedHandler: cache updated, serving new OpenAPI spec")
 		writeSpec(w, newSpec)
 	}
 }
@@ -51,14 +51,14 @@ func InvalidateCache(w http.ResponseWriter, _ *http.Request) {
 	cacheMutex.Lock()
 	cacheValid = false
 	cacheMutex.Unlock()
-	slog.Info("[openapi] InvalidateCache: OpenAPI cache invalidated")
+	slog.Debug("[openapi] InvalidateCache: OpenAPI cache invalidated")
 	w.WriteHeader(http.StatusOK)
 }
 
 // GenerateOpenAPISpecFile generates the OpenAPI spec and writes it to the given file path.
 func GenerateOpenAPISpecFile(router chi.Router, cfg Config, filePath string, refresh bool) error {
 	ensureTypeIndex()
-	slog.Info("[openapi] GenerateOpenAPISpecFile: generating OpenAPI spec", "filePath", filePath)
+	slog.Debug("[openapi] GenerateOpenAPISpecFile: generating OpenAPI spec", "filePath", filePath)
 
 	cacheMutex.RLock()
 	cachedSpec := specCache
@@ -67,10 +67,10 @@ func GenerateOpenAPISpecFile(router chi.Router, cfg Config, filePath string, ref
 
 	var spec Spec
 	if isValid {
-		slog.Info("[openapi] GenerateOpenAPISpecFile: cache hit, using cached OpenAPI spec")
+		slog.Debug("[openapi] GenerateOpenAPISpecFile: cache hit, using cached OpenAPI spec")
 		spec = cachedSpec
 	} else {
-		slog.Info("[openapi] GenerateOpenAPISpecFile: cache miss or refresh requested, regenerating OpenAPI spec")
+		slog.Debug("[openapi] GenerateOpenAPISpecFile: cache miss or refresh requested, regenerating OpenAPI spec")
 		generator := NewGeneratorWithCache(typeIndex)
 		spec = generator.GenerateSpec(router, cfg)
 
@@ -79,14 +79,14 @@ func GenerateOpenAPISpecFile(router chi.Router, cfg Config, filePath string, ref
 		cacheValid = true
 		cacheMutex.Unlock()
 
-		slog.Info("[openapi] GenerateOpenAPISpecFile: cache updated")
+		slog.Debug("[openapi] GenerateOpenAPISpecFile: cache updated")
 	}
 
-	slog.Info("[openapi] GenerateOpenAPISpecFile: writing OpenAPI spec to file", "version", spec.Info.Version)
+	slog.Debug("[openapi] GenerateOpenAPISpecFile: writing OpenAPI spec to file", "version", spec.Info.Version)
 
 	file, err := os.Create(filePath)
 	if err != nil {
-		slog.Info("[openapi] GenerateOpenAPISpecFile: failed to create file", "err", err)
+		slog.Debug("[openapi] GenerateOpenAPISpecFile: failed to create file", "err", err)
 		return err
 	}
 	defer file.Close()
@@ -94,11 +94,11 @@ func GenerateOpenAPISpecFile(router chi.Router, cfg Config, filePath string, ref
 	enc := json.NewEncoder(file)
 	enc.SetIndent("", "  ")
 	if err = enc.Encode(spec); err != nil {
-		slog.Info("[openapi] GenerateOpenAPISpecFile: failed to write file", "err", err)
+		slog.Debug("[openapi] GenerateOpenAPISpecFile: failed to write file", "err", err)
 		return err
 	}
 
-	slog.Info("[openapi] GenerateOpenAPISpecFile: openapi.json written successfully")
+	slog.Debug("[openapi] GenerateOpenAPISpecFile: openapi.json written successfully")
 	return nil
 }
 
@@ -106,7 +106,7 @@ func GenerateOpenAPISpecFile(router chi.Router, cfg Config, filePath string, ref
 func GenerateFileHandler(router chi.Router, cfg Config) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ensureTypeIndex()
-		slog.Info("[openapi] GenerateFileHandler: checking cache validity")
+		slog.Debug("[openapi] GenerateFileHandler: checking cache validity")
 		refresh := r.URL.Query().Get("refresh") == "true"
 
 		err := GenerateOpenAPISpecFile(router, cfg, "openapi.json", refresh)
@@ -115,7 +115,7 @@ func GenerateFileHandler(router chi.Router, cfg Config) http.HandlerFunc {
 			return
 		}
 
-		slog.Info("[openapi] GenerateFileHandler: openapi.json written successfully")
+		slog.Debug("[openapi] GenerateFileHandler: openapi.json written successfully")
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusCreated)
 		_, _ = w.Write([]byte(`{"message":"openapi.json created"}`))
