@@ -9,6 +9,9 @@ import (
 	"github.com/go-chi/chi/v5"
 )
 
+// CachedHandler returns an HTTP handler that serves the OpenAPI specification.
+// The specification is cached and only regenerated when refresh=true is passed
+// as a query parameter or when the cache is invalidated.
 func CachedHandler(router chi.Router, cfg Config) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		refresh := r.URL.Query().Get("refresh") == "true"
@@ -17,13 +20,18 @@ func CachedHandler(router chi.Router, cfg Config) http.HandlerFunc {
 	}
 }
 
+// writeSpec writes the OpenAPI specification as JSON to the response writer.
+// Sets appropriate content type and handles encoding errors gracefully.
 func writeSpec(w http.ResponseWriter, spec Spec) {
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(spec); err != nil {
+		slog.Error("[openapi] writeSpec: failed to encode JSON", "error", err)
 		http.Error(w, "Failed to encode OpenAPI spec", http.StatusInternalServerError)
 	}
 }
 
+// InvalidateCache invalidates the cached OpenAPI specification.
+// The next request will trigger regeneration of the specification.
 func InvalidateCache(w http.ResponseWriter, _ *http.Request) {
 	cacheMutex.Lock()
 	cacheValid = false

@@ -1,6 +1,7 @@
 package openapi
 
 import (
+	"fmt"
 	"net/http"
 	"reflect"
 	"runtime"
@@ -19,9 +20,30 @@ type RouteInfo struct {
 	Middlewares []func(http.Handler) http.Handler
 }
 
+// RouteDiscoveryError represents an error that occurred during route discovery.
+type RouteDiscoveryError struct {
+	Operation string
+	Err       error
+}
+
+func (e *RouteDiscoveryError) Error() string {
+	return fmt.Sprintf("route discovery %s: %v", e.Operation, e.Err)
+}
+
+func (e *RouteDiscoveryError) Unwrap() error {
+	return e.Err
+}
+
 // InspectRoutes walks a Chi router and returns a list of RouteInfo.
-// Returns an error if the router traversal fails.
+// Returns an error if the router traversal fails or if route analysis encounters issues.
 func InspectRoutes(r chi.Router) ([]RouteInfo, error) {
+	if r == nil {
+		return nil, &RouteDiscoveryError{
+			Operation: "inspect",
+			Err:       fmt.Errorf("router cannot be nil"),
+		}
+	}
+
 	var routes []RouteInfo
 	err := chi.Walk(r, func(method string, route string, handler http.Handler, middlewares ...func(http.Handler) http.Handler) error {
 		// Attempt to extract http.HandlerFunc
@@ -43,11 +65,20 @@ func InspectRoutes(r chi.Router) ([]RouteInfo, error) {
 		})
 		return nil
 	})
-	return routes, err
+
+	if err != nil {
+		return nil, &RouteDiscoveryError{
+			Operation: "walk",
+			Err:       err,
+		}
+	}
+
+	return routes, nil
 }
 
-// DiscoverRoutes filters out internal OpenAPI routes and returns usable RouteInfo.
 // DiscoverRoutes returns only non-internal routes for OpenAPI spec assembly.
+// This function filters out routes that are part of the OpenAPI tooling itself
+// (such as /swagger and /openapi endpoints) to avoid circular references in the specification.
 func DiscoverRoutes(r chi.Router) ([]RouteInfo, error) {
 	// Retrieve all routes via InspectRoutes
 	infos, err := InspectRoutes(r)

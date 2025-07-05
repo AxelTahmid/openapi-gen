@@ -15,31 +15,38 @@ import (
 )
 
 // Generator creates OpenAPI specifications from Chi routers.
+// It provides methods for analyzing route structures, parsing annotations,
+// and generating complete OpenAPI 3.1 specifications.
 type Generator struct {
 	schemaGen *SchemaGenerator
 }
 
+// Config defines the configuration for OpenAPI specification generation.
+// All fields except Title and Version are optional.
 type Config struct {
-	Title          string
-	Description    string
-	Version        string
-	TermsOfService string
-	Server         string
-	Contact        *Contact
-	License        *License
+	Title          string   // Required: API title
+	Description    string   // Optional: API description
+	Version        string   // Required: API version (e.g., "1.0.0")
+	TermsOfService string   // Optional: Terms of service URL
+	Server         string   // Optional: Base server URL
+	Contact        *Contact // Optional: Contact information
+	License        *License // Optional: License information
 }
 
+// Contact represents contact information for the API.
 type Contact struct {
-	Name  string
-	URL   string
-	Email string
+	Name  string // Contact name
+	URL   string // Contact URL
+	Email string // Contact email address
 }
 
+// License represents license information for the API.
 type License struct {
-	Name string
-	URL  string
+	Name string // License name (e.g., "MIT", "Apache 2.0")
+	URL  string // License URL
 }
 
+// Spec represents a complete OpenAPI 3.1 specification.
 type Spec struct {
 	OpenAPI           string                 `json:"openapi"`
 	Info              Info                   `json:"info"`
@@ -262,7 +269,19 @@ func NewGenerator() *Generator {
 }
 
 // GenerateSpec creates an OpenAPI 3.1 specification from a Chi router.
+// This method analyzes all routes in the router, parses annotations from handlers,
+// and generates schemas for all referenced types. It returns a complete OpenAPI 3.1 specification.
+//
+// Required configuration fields:
+//   - Title: The API title
+//   - Version: The API version
+//
+// The method will log warnings for any parsing errors but will continue generation.
 func (g *Generator) GenerateSpec(router chi.Router, cfg Config) Spec {
+	if cfg.Title == "" || cfg.Version == "" {
+		slog.Warn("[openapi] GenerateSpec: missing required config", "title", cfg.Title, "version", cfg.Version)
+	}
+
 	slog.Debug("[openapi] GenerateSpec: called", "title", cfg.Title, "version", cfg.Version)
 	spec := Spec{
 		OpenAPI:           "3.1.0",
