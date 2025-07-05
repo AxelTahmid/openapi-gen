@@ -30,7 +30,7 @@ type openapiTestOther struct {
 }
 
 func TestSchemaGenerator_SimpleStruct(t *testing.T) {
-	gen := NewSchemaGenerator()
+	gen := newTestSchemaGenerator()
 	schema := gen.GenerateSchema("Simple")
 	if schema == nil || schema.Ref == "" {
 		t.Fatal("expected schema ref for Simple")
@@ -42,7 +42,7 @@ func TestSchemaGenerator_SimpleStruct(t *testing.T) {
 }
 
 func TestSchemaGenerator_PointerField(t *testing.T) {
-	gen := NewSchemaGenerator()
+	gen := newTestSchemaGenerator()
 	schema := gen.GenerateSchema("WithPointer")
 	if schema == nil || schema.Ref == "" {
 		t.Fatal("expected schema ref for WithPointer")
@@ -50,7 +50,7 @@ func TestSchemaGenerator_PointerField(t *testing.T) {
 }
 
 func TestSchemaGenerator_ArrayField(t *testing.T) {
-	gen := NewSchemaGenerator()
+	gen := newTestSchemaGenerator()
 	schema := gen.GenerateSchema("WithArray")
 	if schema == nil || schema.Ref == "" {
 		t.Fatal("expected schema ref for WithArray")
@@ -71,7 +71,7 @@ func TestSchemaGenerator_ArrayField(t *testing.T) {
 // }
 
 func TestSchemaGenerator_QualifiedType(t *testing.T) {
-	gen := NewSchemaGenerator()
+	gen := newTestSchemaGenerator()
 	schema := gen.GenerateSchema("openapiTestOther")
 	if schema == nil || schema.Ref == "" {
 		t.Fatal("expected schema ref for openapiTestOther")
@@ -79,7 +79,7 @@ func TestSchemaGenerator_QualifiedType(t *testing.T) {
 }
 
 func TestSchemaGenerator_BasicTypes(t *testing.T) {
-	gen := NewSchemaGenerator()
+	gen := newTestSchemaGenerator()
 	cases := map[string]string{
 		"int":     "integer",
 		"string":  "string",
