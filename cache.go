@@ -114,6 +114,8 @@ type TypeIndex struct {
 	types              map[string]map[string]*ast.TypeSpec // package -> type -> spec
 	files              map[string]*ast.File                // file path -> parsed file
 	externalKnownTypes map[string]*Schema                  // external known types
+	qualifiedTypes     map[string]*ast.TypeSpec            // qualified type name -> spec (e.g., "order.CreateReq")
+	packageImports     map[string]string                   // import path -> package name (e.g., "github.com/user/sqlc" -> "sqlc")
 }
 
 // BuildTypeIndex scans the given roots and builds a type index for all Go types.
@@ -122,51 +124,75 @@ func BuildTypeIndex() *TypeIndex {
 		types:              make(map[string]map[string]*ast.TypeSpec),
 		files:              make(map[string]*ast.File),
 		externalKnownTypes: make(map[string]*Schema),
+		qualifiedTypes:     make(map[string]*ast.TypeSpec),
+		packageImports:     make(map[string]string),
 	}
 
-	slog.Debug("[openapi] BuildTypeIndex: walking root")
-	_ = filepath.Walk(".", func(path string, info os.FileInfo, err error) error {
+	// Find project root by looking for go.mod
+	projectRoot := findProjectRoot()
+	if projectRoot == "" {
+		slog.Debug("[openapi] BuildTypeIndex: could not find project root, using current directory")
+		projectRoot = "."
+	} else {
+		slog.Debug("[openapi] BuildTypeIndex: using project root", "root", projectRoot)
+	}
+
+	_ = filepath.Walk(projectRoot, func(path string, info os.FileInfo, err error) error {
 		if err != nil ||
 			info.IsDir() ||
 			!strings.HasSuffix(path, ".go") ||
 			strings.HasSuffix(path, "_test.go") {
-			return nil
+			return err
 		}
 
-		fset := token.NewFileSet()
-		file, err := parser.ParseFile(fset, path, nil, 0)
-		if err != nil {
-			slog.Debug("[openapi] BuildTypeIndex: failed to parse file", "path", path, "err", err)
-			return nil
-		}
-		idx.files[path] = file
-		pkg := file.Name.Name
-		if _, ok := idx.types[pkg]; !ok {
-			idx.types[pkg] = make(map[string]*ast.TypeSpec)
-		}
-		for _, decl := range file.Decls {
-			if gd, ok := decl.(*ast.GenDecl); ok && gd.Tok == token.TYPE {
-				for _, spec := range gd.Specs {
-					if ts, ok := spec.(*ast.TypeSpec); ok {
-						idx.types[pkg][ts.Name.Name] = ts
-						slog.Debug(
-							"[openapi] BuildTypeIndex: indexed type",
-							"package",
-							pkg,
-							"type",
-							ts.Name.Name,
-							"file",
-							path,
-						)
-					}
-				}
-			}
-		}
-		return nil
+		return idx.indexFile(path)
 	})
 
 	slog.Debug("[openapi] BuildTypeIndex: completed", "totalPackages", len(idx.types), "totalFiles", len(idx.files))
 	return idx
+}
+
+// indexFile processes a single Go file and indexes its types
+func (idx *TypeIndex) indexFile(path string) error {
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, path, nil, parser.ParseComments)
+	if err != nil {
+		slog.Debug("[openapi] BuildTypeIndex: failed to parse file", "path", path, "err", err)
+		return nil // Continue with other files
+	}
+
+	idx.files[path] = file
+	pkg := file.Name.Name
+
+	if _, ok := idx.types[pkg]; !ok {
+		idx.types[pkg] = make(map[string]*ast.TypeSpec)
+	}
+
+	// Index type declarations
+	for _, decl := range file.Decls {
+		if gd, ok := decl.(*ast.GenDecl); ok && gd.Tok == token.TYPE {
+			for _, spec := range gd.Specs {
+				if ts, isTypeSpec := spec.(*ast.TypeSpec); isTypeSpec {
+					typeName := ts.Name.Name
+					qualifiedName := idx.getQualifiedTypeName(pkg, typeName)
+
+					// Store in both maps
+					idx.types[pkg][typeName] = ts
+					idx.qualifiedTypes[qualifiedName] = ts
+
+					slog.Debug(
+						"[openapi] BuildTypeIndex: indexed type",
+						"package", pkg,
+						"type", typeName,
+						"qualified", qualifiedName,
+						"file", path,
+					)
+				}
+			}
+		}
+	}
+
+	return nil
 }
 
 func GetTypeIndex() *TypeIndex {
@@ -190,17 +216,49 @@ func (idx *TypeIndex) LookupType(pkg, typeName string) *ast.TypeSpec {
 	return nil
 }
 
-// LookupUnqualifiedType searches for a type across all packages and returns the first match along with package name
+// LookupQualifiedType returns the TypeSpec for a qualified type name (e.g., "order.CreateReq")
+func (idx *TypeIndex) LookupQualifiedType(qualifiedName string) *ast.TypeSpec {
+	if idx == nil {
+		return nil
+	}
+	return idx.qualifiedTypes[qualifiedName]
+}
+
+// LookupUnqualifiedType searches for a type across all packages and returns the first match along with qualified name
 func (idx *TypeIndex) LookupUnqualifiedType(typeName string) (*ast.TypeSpec, string) {
 	if idx == nil {
 		return nil, ""
 	}
+
+	// First check if it's a basic type
+	if isBasicType(typeName) {
+		return nil, ""
+	}
+
+	// Look for the type in all packages and return the qualified name
 	for pkgName, pkgTypes := range idx.types {
 		if typeSpec, exists := pkgTypes[typeName]; exists {
-			return typeSpec, pkgName
+			qualifiedName := idx.getQualifiedTypeName(pkgName, typeName)
+			return typeSpec, qualifiedName
 		}
 	}
 	return nil, ""
+}
+
+// GetQualifiedTypeName returns the appropriate qualified name for a type
+func (idx *TypeIndex) GetQualifiedTypeName(typeName string) string {
+	// If already qualified, return as-is
+	if strings.Contains(typeName, ".") {
+		return typeName
+	}
+
+	// Look up the type and return its qualified name
+	if _, qualifiedName := idx.LookupUnqualifiedType(typeName); qualifiedName != "" {
+		return qualifiedName
+	}
+
+	// Fallback to original name
+	return typeName
 }
 
 func AddExternalKnownType(name string, schema *Schema) {
@@ -221,4 +279,63 @@ func AddExternalKnownType(name string, schema *Schema) {
 func resetTypeIndexForTesting() {
 	typeIndex = nil
 	typeIndexOnce = sync.Once{}
+}
+
+// getQualifiedTypeName creates a qualified type name for indexing.
+// For external packages (like sqlc, pgtype), use the package name as-is.
+// For internal project types, use package.TypeName format.
+func (idx *TypeIndex) getQualifiedTypeName(pkg, typeName string) string {
+	// Check if this is an external/third-party package
+	if idx.isExternalPackage(pkg) {
+		return pkg + "." + typeName
+	}
+
+	// For internal project types, use package.TypeName format
+	return pkg + "." + typeName
+}
+
+// isExternalPackage determines if a package is external/third-party
+func (idx *TypeIndex) isExternalPackage(pkg string) bool {
+	// List of known external packages that should keep their qualified names
+	externalPkgs := map[string]bool{
+		"sqlc":    true,
+		"pgtype":  true,
+		"json":    true,
+		"time":    true,
+		"uuid":    true,
+		"net":     true,
+		"url":     true,
+		"sql":     true,
+		"big":     true,
+		"decimal": true,
+	}
+
+	return externalPkgs[pkg]
+}
+
+// findProjectRoot finds the project root by looking for go.mod file
+func findProjectRoot() string {
+	// Start from current working directory
+	currentDir, err := os.Getwd()
+	if err != nil {
+		return ""
+	}
+
+	// Walk up the directory tree looking for go.mod
+	for {
+		goModPath := filepath.Join(currentDir, "go.mod")
+		if _, err := os.Stat(goModPath); err == nil {
+			return currentDir
+		}
+
+		// Move up one directory
+		parentDir := filepath.Dir(currentDir)
+		if parentDir == currentDir {
+			// Reached filesystem root
+			break
+		}
+		currentDir = parentDir
+	}
+
+	return ""
 }
