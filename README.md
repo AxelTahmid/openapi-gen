@@ -8,19 +8,19 @@ An annotation-driven OpenAPI 3.1 specification generator for Go HTTP services us
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Go Report Card](https://goreportcard.com/badge/github.com/AxelTahmid/openapi-gen)](https://goreportcard.com/report/github.com/AxelTahmid/openapi-gen)
 
-## ✨ Features
+## Features
 
--   **🚀 Zero Configuration**: No manual type registration or complex setup required
--   **🎯 Chi Router Native**: Specifically designed and optimized for `go-chi/chi` router
--   **📝 Annotation-Driven**: Uses standard Swagger-style comments for documentation
--   **🔄 Dynamic Schema Generation**: Automatically generates JSON schemas from Go types
--   **⚡ High Performance**: Built-in caching and type indexing for optimal performance
--   **🛡️ Type Safety**: Leverages Go's type system for accurate schema generation
--   **🔍 Deep Type Discovery**: Recursively finds and documents all referenced types
--   **🌐 External Type Support**: Configurable support for third-party library types
--   **📊 Runtime Generation**: Updates documentation dynamically without restarts
+-   **Zero Configuration**: No manual type registration or complex setup required
+-   **Chi Router Native**: Specifically designed and optimized for `go-chi/chi` router
+-   **Annotation-Driven**: Uses standard Swagger-style comments for documentation
+-   **Dynamic Schema Generation**: Automatically generates JSON schemas from Go types
+-   **High Performance**: Built-in caching and type indexing for optimal performance
+-   **Type Safety**: Leverages Go's type system for accurate schema generation
+-   **Deep Type Discovery**: Recursively finds and documents all referenced types
+-   **External Type Support**: Configurable support for third-party library types
+-   **Runtime Generation**: Updates documentation dynamically without restarts
 
-## ⚠️ Current Limitations
+## Current Limitations
 
 As mentioned, this package was extracted from a larger project and has room for improvements:
 
@@ -34,13 +34,13 @@ As mentioned, this package was extracted from a larger project and has room for 
 
 Despite these limitations, the package serves its core purpose effectively for Chi + SQLC + pgx/v5 projects.
 
-## 📦 Installation
+## Installation
 
 ```bash
 go get github.com/AxelTahmid/openapi-gen
 ```
 
-## 🚀 Quick Start
+## Quick Start
 
 ### 1. Define Your Types
 
@@ -74,7 +74,7 @@ type UserListResponse struct {
 
 ### 2. Create Annotated Handler Functions
 
-**🚨 Important**: Handlers must be **top-level functions**, not struct methods, for annotation parsing to work correctly.
+**Important**: Handlers must be **top-level functions**, not struct methods, for annotation parsing to work correctly.
 
 ```go
 // GetUsers retrieves a paginated list of users
@@ -231,7 +231,7 @@ func main() {
         log.Fatalf("Failed to generate OpenAPI spec: %v", err)
     }
 
-    log.Println("✅ OpenAPI specification generated successfully: openapi.json")
+    log.Println("OpenAPI specification generated successfully: openapi.json")
 }
 ```
 
@@ -251,11 +251,11 @@ curl http://localhost:8080/openapi/generate
 curl http://localhost:8080/openapi/invalidate
 ```
 
-## 📋 Usage Scenarios
+## Usage Scenarios
 
 This package supports various deployment and usage patterns. Choose the approach that best fits your project:
 
-### 🚀 Development Mode (Runtime Generation)
+### Development Mode (Runtime Generation)
 
 Perfect for local development and staging environments:
 
@@ -288,7 +288,7 @@ func main() {
 }
 ```
 
-### 🏭 Production Mode (Static File Generation)
+### Production Mode (Static File Generation)
 
 Generate static OpenAPI files for production deployment:
 
@@ -318,11 +318,11 @@ func main() {
         log.Fatalf("Failed to generate spec: %v", err)
     }
 
-    log.Println("✅ Static OpenAPI spec generated at docs/openapi.json")
+    log.Println("Static OpenAPI spec generated at docs/openapi.json")
 }
 ```
 
-### 🔄 CI/CD Integration
+### CI/CD Integration
 
 Integrate documentation generation into your build pipeline:
 
@@ -363,7 +363,7 @@ jobs:
                   publish_dir: ./docs
 ```
 
-### 🧪 Testing Integration
+### Testing Integration
 
 Use in your test suites for API contract testing:
 
@@ -399,7 +399,7 @@ func TestAPIContractCompliance(t *testing.T) {
 }
 ```
 
-### 🏢 Microservices Architecture
+### Microservices Architecture
 
 Generate documentation for multiple services:
 
@@ -447,7 +447,7 @@ func generateServiceDocs() {
 }
 ```
 
-### 🔧 Custom Middleware Integration
+### Custom Middleware Integration
 
 Works seamlessly with Chi middleware:
 
@@ -489,11 +489,11 @@ func main() {
 }
 ```
 
-## 🎯 Why Top-Level Functions?
+## Why Top-Level Functions?
 
 This package uses Go's AST parsing to extract function comments and annotations. For the parser to correctly identify and process your handler functions, they must be defined as **top-level functions** rather than struct methods.
 
-### ❌ Won't Work (Struct Methods)
+### Won't Work (Struct Methods)
 
 ```go
 type UserHandler struct {
@@ -507,7 +507,7 @@ func (h *UserHandler) CreateUser(w http.ResponseWriter, r *http.Request) {
 }
 ```
 
-### ✅ Will Work (Top-Level Functions)
+### Will Work (Top-Level Functions)
 
 ```go
 // This will be found and parsed correctly
@@ -525,7 +525,7 @@ func CreateUserWithService(service UserService) http.HandlerFunc {
 }
 ```
 
-## 📚 Supported Annotations
+## Supported Annotations
 
 | Annotation     | Format                                                 | Description                   | Example                                                    |
 | -------------- | ------------------------------------------------------ | ----------------------------- | ---------------------------------------------------------- |
@@ -556,7 +556,7 @@ func CreateUserWithService(service UserService) http.HandlerFunc {
 | `{array}`  | `@Success 200 {array} User "List of users"` | Array of objects |
 | `{data}`   | `@Success 200 {data} string "Raw data"`     | Raw data type    |
 
-## 🔧 Advanced Configuration
+## Advanced Configuration
 
 ### Full Configuration Example
 
@@ -597,18 +597,18 @@ openapi.AddExternalKnownType("github.com/google/uuid.UUID", &openapi.Schema{
 })
 ```
 
-## 🏗️ Schema Generation
+## Schema Generation
 
 The package automatically generates JSON schemas for your Go types with the following features:
 
 ### Features
 
--   **🔍 Automatic Discovery**: Finds types by scanning your project files
--   **📦 Package-Aware**: Supports both local types (`User`) and package-qualified types (`db.User`)
--   **🏷️ Struct Tag Support**: Respects `json` tags and `omitempty` directives
--   **🔄 Type Mapping**: Maps Go types to appropriate OpenAPI types
--   **🔗 Reference Resolution**: Handles circular references and type reuse
--   **⚡ Performance Optimized**: Built-in type indexing and caching
+-   **Automatic Discovery**: Finds types by scanning your project files
+-   **Package-Aware**: Supports both local types (`User`) and package-qualified types (`db.User`)
+-   **Struct Tag Support**: Respects `json` tags and `omitempty` directives
+-   **Type Mapping**: Maps Go types to appropriate OpenAPI types
+-   **Reference Resolution**: Handles circular references and type reuse
+-   **Performance Optimized**: Built-in type indexing and caching
 
 ### Type Discovery Process
 
@@ -666,7 +666,7 @@ The generator produces this OpenAPI schema:
 }
 ```
 
-## 🔐 Security Integration
+## Security Integration
 
 The package automatically detects security requirements and generates appropriate security schemes:
 
@@ -685,7 +685,7 @@ func AdminOnlyEndpoint(w http.ResponseWriter, r *http.Request) {
 }
 ```
 
-## 🎭 Integration Examples
+## Integration Examples
 
 ### With Authentication Middleware
 
@@ -747,7 +747,7 @@ func MyHandler(w http.ResponseWriter, r *http.Request) {
 }
 ```
 
-## 🧪 Testing Your OpenAPI Spec
+## Testing Your OpenAPI Spec
 
 ### Validate Generated Spec
 
@@ -810,14 +810,14 @@ func TestOpenAPISpec(t *testing.T) {
 }
 ```
 
-## ⚡ Performance & Caching
+## Performance & Caching
 
 The package includes several performance optimizations:
 
--   **🚀 Type Index Caching**: Built-in type discovery cache
--   **📊 Spec Caching**: Generated specifications are cached
--   **🔄 Smart Invalidation**: Cache invalidation when needed
--   **⚡ Lazy Loading**: Types are discovered and parsed on-demand
+-   **Type Index Caching**: Built-in type discovery cache
+-   **Spec Caching**: Generated specifications are cached
+-   **Smart Invalidation**: Cache invalidation when needed
+-   **Lazy Loading**: Types are discovered and parsed on-demand
 
 ### Cache Management
 
@@ -832,18 +832,19 @@ curl http://localhost:8080/openapi?refresh=true
 curl http://localhost:8080/openapi/invalidate
 ```
 
-## 🏗️ Architecture
+## Architecture
 
-The package consists of 4 main components:
+The package consists of several main components:
 
-| Component            | Purpose                                    | Key Features                         |
-| -------------------- | ------------------------------------------ | ------------------------------------ |
-| **Generator**        | Main specification generator               | Route walking, operation building    |
-| **Annotations**      | Comment parsing and annotation extraction  | Swagger annotation support           |
-| **Schema Generator** | Dynamic Go type to JSON schema conversion  | Type discovery, recursive generation |
-| **Cache**            | Type indexing and performance optimization | AST caching, type lookup             |
+| Component            | Purpose                                    | Key Features                                 |
+| -------------------- | ------------------------------------------ | -------------------------------------------- |
+| **Generator**        | Main specification generator               | Route walking, operation building            |
+| **Router Discovery** | Chi router analysis and route extraction   | Route introspection, handler identification  |
+| **Annotations**      | Comment parsing and annotation extraction  | Swagger annotation support, error reporting  |
+| **Schema Generator** | Dynamic Go type to JSON schema conversion  | Type discovery, recursive generation         |
+| **Cache**            | Type indexing and performance optimization | AST caching, type lookup, smart invalidation |
 
-## 🚨 Common Issues & Solutions
+## Common Issues & Solutions
 
 ### Issue: Annotations Not Being Parsed
 
@@ -852,11 +853,11 @@ The package consists of 4 main components:
 **Solution**: Ensure handlers are top-level functions, not struct methods.
 
 ```go
-// ❌ Wrong
+// Wrong
 type Handler struct{}
 func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {}
 
-// ✅ Correct
+// Correct
 func Create(w http.ResponseWriter, r *http.Request) {}
 ```
 
@@ -886,7 +887,7 @@ openapi.AddExternalKnownType("external.Type", &openapi.Schema{
 
 **Solution**: Use the built-in caching and consider pre-building type index.
 
-## 🔧 Development & Contributing
+## Development & Contributing
 
 ### Prerequisites
 
@@ -920,19 +921,25 @@ golangci-lint run
 ### Project Structure
 
 ```
-pkg/openapi/
-├── annotations.go          # Annotation parsing
-├── annotations_test.go     # Annotation tests
-├── cache.go               # Type indexing and caching
-├── cache_test.go          # Cache tests
-├── generator.go           # Main OpenAPI generator
-├── generator_test.go      # Generator tests
-├── handlers.go            # HTTP handlers
-├── integration_test.go    # Integration tests
-├── schema.go              # Schema generation
-├── schema_test.go         # Schema tests
-├── schema_enhanced_test.go # Extended schema tests
-└── README.md              # This file
+openapi-gen/
+├── annotations.go              # Annotation parsing and validation
+├── annotations_test.go         # Annotation parsing tests
+├── cache.go                    # Type indexing and caching system
+├── generator.go                # Core OpenAPI specification generator
+├── generator_spec_test.go      # Generator integration tests
+├── handlers.go                 # HTTP handlers for serving specs
+├── openapi_test.go             # OpenAPI generation tests
+├── qualified_names_test.go     # Type name resolution tests
+├── router_discovery.go         # Chi router route discovery
+├── router_discovery_test.go    # Router discovery tests
+├── schema.go                   # Core schema generation logic
+├── schema_basic_types.go       # Basic Go type mappings
+├── schema_enums.go             # Enum type handling
+├── schema_structs.go           # Struct schema generation
+├── schema_tags.go              # JSON tag processing
+├── schema_test.go              # Schema generation tests
+├── test_helpers.go             # Test utilities and helpers
+└── README.md                   # This file
 ```
 
 ### Running Tests
@@ -973,7 +980,7 @@ When adding new features:
 -   Keep functions focused and small
 -   Use structured logging with appropriate levels
 
-## 🚀 Roadmap
+## Roadmap
 
 ### Immediate Improvements (Community Contributions Welcome)
 
@@ -992,32 +999,32 @@ When adding new features:
 
 ### Explicitly Not Planned
 
--   ❌ **Multiple Router Support**: This package is Chi-specific by design
--   ❌ **GraphQL Support**: Out of scope for this project
--   ❌ **Client Generation**: Use existing OpenAPI client generators
--   ❌ **Struct Method Support**: AST limitations make this impractical
+-   **Multiple Router Support**: This package is Chi-specific by design
+-   **GraphQL Support**: Out of scope for this project
+-   **Client Generation**: Use existing OpenAPI client generators
+-   **Struct Method Support**: AST limitations make this impractical
 
 **Note**: This project serves a specific need (Chi + SQLC + pgx/v5). Major feature additions should align with this core use case. For other routers or frameworks, consider using more general-purpose OpenAPI generators.
 
-## 📝 Changelog
+## Changelog
 
 ### v0.1.0 (Latest)
 
--   ✨ Initial public release
--   🚀 Full OpenAPI 3.1 support
--   ⚡ High-performance type indexing
--   📚 Comprehensive documentation
--   🧪 Extensive test coverage
--   🔧 Stable core functionality
+-   Initial public release
+-   Full OpenAPI 3.1 support
+-   High-performance type indexing
+-   Comprehensive documentation
+-   Extensive test coverage
+-   Stable core functionality
 
-## 🆘 Support & Community
+## Support & Community
 
 ### Getting Help
 
--   **📖 Documentation**: Check this README and code examples
--   **🐛 Bug Reports**: Open an issue on GitHub with detailed reproduction steps
--   **💡 Feature Requests**: Open an issue with the `enhancement` label
--   **❓ Questions**: Start a discussion in the repository discussions
+-   **Documentation**: Check this README and code examples
+-   **Bug Reports**: Open an issue on GitHub with detailed reproduction steps
+-   **Feature Requests**: Open an issue with the `enhancement` label
+-   **Questions**: Start a discussion in the repository discussions
 
 ### Community Resources
 
@@ -1026,11 +1033,11 @@ When adding new features:
 -   **Examples Repository**: Real-world usage examples
 -   **Blog Posts**: Tutorials and best practices
 
-## 📄 License
+## License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
-## 🙏 Acknowledgments
+## Acknowledgments
 
 -   **Chi Router Team**: For the excellent HTTP router
 -   **OpenAPI Initiative**: For the comprehensive API specification standard
@@ -1039,6 +1046,6 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ---
 
-**Made with ❤️ for the Go community**
+**Made for the Go community**
 
-If this project helps you, please consider giving it a ⭐ on GitHub!
+If this project helps you, please consider giving it a star on GitHub!
