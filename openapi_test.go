@@ -248,12 +248,12 @@ func TestTypeIndex(t *testing.T) {
 
 	// Test lookup functionality
 	// Look for a type that should exist in the openapi package
-	spec, pkg := idx.LookupUnqualifiedType("Spec")
+	spec, qualifiedName := idx.LookupUnqualifiedType("Spec")
 	if spec == nil {
 		t.Error("Should find Spec type in openapi package")
 	}
-	if pkg != "openapi" {
-		t.Errorf("Expected package 'openapi', got '%s'", pkg)
+	if qualifiedName != "openapi.Spec" {
+		t.Errorf("Expected qualified name 'openapi.Spec', got '%s'", qualifiedName)
 	}
 }
 
