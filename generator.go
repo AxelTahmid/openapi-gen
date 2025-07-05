@@ -8,6 +8,8 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/go-chi/chi/v5"
 )
@@ -244,14 +246,6 @@ type Tag struct {
 	Description string `json:"description,omitempty"`
 }
 
-// NewGenerator creates a new OpenAPI generator.
-func NewGenerator() *Generator {
-	slog.Debug("[openapi] NewGenerator: initializing OpenAPI generator")
-	return &Generator{
-		schemaGen: NewSchemaGenerator(typeIndex),
-	}
-}
-
 func NewGeneratorWithCache(typeIndex *TypeIndex) *Generator {
 	return &Generator{
 		schemaGen: &SchemaGenerator{
@@ -259,6 +253,12 @@ func NewGeneratorWithCache(typeIndex *TypeIndex) *Generator {
 			typeIndex: typeIndex,
 		},
 	}
+}
+
+// NewGenerator creates a Generator with a default TypeIndex.
+func NewGenerator() *Generator {
+	ensureTypeIndex()
+	return NewGeneratorWithCache(typeIndex)
 }
 
 // GenerateSpec creates an OpenAPI 3.1 specification from a Chi router.
@@ -308,36 +308,28 @@ func (g *Generator) GenerateSpec(router chi.Router, cfg Config) Spec {
 	// Add standard schemas
 	g.addStandardSchemas(&spec)
 
-	// Walk routes and build paths
+	// Discover routes via DiscoverRoutes
 	tags := make(map[string]bool)
-	walkFunc := func(method string, route string, handler http.Handler, middlewares ...func(http.Handler) http.Handler) error {
-		// Skip OpenAPI routes
-		if strings.Contains(route, "/swagger") || strings.Contains(route, "/openapi") {
-			return nil
-		}
-		slog.Debug("[openapi] GenerateSpec: walking route", "method", method, "route", route)
+	routes, err := DiscoverRoutes(router)
+	if err != nil {
+		slog.Warn("[openapi] GenerateSpec: InspectRoutes error", "error", err)
+	}
+	for _, ri := range routes {
+		method := ri.Method
+		route := ri.Pattern
+		handler := ri.HandlerFunc
+		slog.Debug("[openapi] GenerateSpec: processing route", "method", method, "route", route)
 		pathKey := convertRouteToOpenAPIPath(route)
-		operation := g.buildOperation(handler, route, method, middlewares)
+		operation := g.buildOperation(handler, route, method, ri.Middlewares)
 
-		// Initialize path if needed
 		if spec.Paths[pathKey] == nil {
 			spec.Paths[pathKey] = make(PathItem)
 		}
-
-		// Add operation
 		spec.Paths[pathKey][strings.ToLower(method)] = operation
-
-		// Collect tags
 		for _, tag := range operation.Tags {
 			tags[tag] = true
 		}
-
-		return nil
 	}
-
-	slog.Debug("[openapi] GenerateSpec: starting chi.Walk")
-	// Execute the walk
-	_ = chi.Walk(router, walkFunc)
 
 	slog.Debug("[openapi] GenerateSpec: building tags array")
 	// Build tags array
@@ -393,7 +385,11 @@ func (g *Generator) buildOperation(
 			"function",
 			handlerInfo.FunctionName,
 		)
-		annotations = ParseAnnotations(handlerInfo.File, handlerInfo.FunctionName)
+		var err error
+		annotations, err = ParseAnnotations(handlerInfo.File, handlerInfo.FunctionName)
+		if err != nil {
+			slog.Warn("[openapi] buildOperation: annotations parse error", "error", err)
+		}
 	}
 
 	// Build operation
@@ -654,13 +650,11 @@ func (g *Generator) buildTags(tagNames map[string]bool) []Tag {
 	for name := range tagNames {
 		tags = append(tags, Tag{
 			Name:        name,
-			Description: strings.Title(name) + " related operations",
+			Description: capitalize(name) + " related operations",
 		})
 	}
 
-	sort.Slice(tags, func(i, j int) bool {
-		return tags[i].Name < tags[j].Name
-	})
+	sort.Slice(tags, func(i, j int) bool { return tags[i].Name < tags[j].Name })
 
 	return tags
 }
@@ -807,7 +801,7 @@ func generateOperationID(method, route string) string {
 
 	for _, part := range parts {
 		if part != "" && !strings.Contains(part, "{") {
-			cleanParts = append(cleanParts, strings.Title(part))
+			cleanParts = append(cleanParts, capitalize(part))
 		}
 	}
 
@@ -839,4 +833,13 @@ func hasJWTMiddleware(middlewares []func(http.Handler) http.Handler) bool {
 		}
 	}
 	return false
+}
+
+// capitalize returns the string with its first rune uppercased.
+func capitalize(s string) string {
+	if s == "" {
+		return s
+	}
+	r, size := utf8.DecodeRuneInString(s)
+	return string(unicode.ToUpper(r)) + s[size:]
 }
