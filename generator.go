@@ -343,9 +343,30 @@ func (g *Generator) GenerateSpec(router chi.Router, cfg Config) Spec {
 	// Build tags array
 	spec.Tags = g.buildTags(tags)
 
-	// Add generated schemas
+	// Add generated schemas with qualified names
 	for name, schema := range g.schemaGen.GetSchemas() {
-		spec.Components.Schemas[name] = schema
+		// Ensure the schema key is qualified
+		qualifiedName := name
+		slog.Debug(
+			"[openapi] GenerateSpec: processing schema",
+			"name",
+			name,
+			"hasQualifier",
+			strings.Contains(name, "."),
+		)
+		if !strings.Contains(name, ".") && g.schemaGen.typeIndex != nil {
+			if qualified := g.schemaGen.typeIndex.GetQualifiedTypeName(name); qualified != name {
+				qualifiedName = qualified
+				slog.Debug(
+					"[openapi] GenerateSpec: qualifying schema key",
+					"original",
+					name,
+					"qualified",
+					qualifiedName,
+				)
+			}
+		}
+		spec.Components.Schemas[qualifiedName] = schema
 	}
 
 	slog.Debug("[openapi] GenerateSpec: completed", "path_count", len(spec.Paths))
