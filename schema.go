@@ -36,7 +36,8 @@ func NewSchemaGenerator(opts ...*TypeIndex) *SchemaGenerator {
 	}
 }
 
-// GenerateSchema creates a JSON schema for the given type name
+// GenerateSchema creates a JSON schema for the given type name.
+// All types are stored using qualified names (e.g., "order.CreateReq", "sqlc.User").
 func (sg *SchemaGenerator) GenerateSchema(typeName string) *Schema {
 	slog.Debug("[openapi] GenerateSchema: called", "typeName", typeName)
 
@@ -46,94 +47,87 @@ func (sg *SchemaGenerator) GenerateSchema(typeName string) *Schema {
 		return &Schema{Type: "object"}
 	}
 
-	// 2) External known types (no locking needed)
-	if sg.typeIndex != nil {
-		if schema, ok := sg.typeIndex.externalKnownTypes[typeName]; ok {
-			slog.Debug("[openapi] GenerateSchema: using externalKnownTypes", "typeName", typeName)
-			return schema
-		}
-	}
-
-	// For basic types, don't use caching - return directly
+	// 2) For basic types, return directly without caching
 	if isBasicType(typeName) {
 		return sg.generateBasicTypeSchema(typeName)
 	}
 
-	// 3) Check if it's an enum type first
-	if enumSchema := sg.handleEnumType(typeName); enumSchema != nil {
-		slog.Debug("[openapi] GenerateSchema: detected enum type", "typeName", typeName)
+	// 3) Normalize the type name to use qualified names
+	qualifiedName := sg.getQualifiedTypeName(typeName)
+	slog.Debug("[openapi] GenerateSchema: type name conversion", "typeName", typeName, "qualifiedName", qualifiedName)
 
-		// Cache the enum schema
-		sg.mutex.Lock()
-		sg.schemas[typeName] = enumSchema
-		if sg.typeIndex != nil && sg.typeIndex.externalKnownTypes != nil {
-			sg.typeIndex.externalKnownTypes[typeName] = &Schema{
-				Ref: fmt.Sprintf("#/components/schemas/%s", typeName),
-			}
+	// 4) Check external known types first
+	if sg.typeIndex != nil {
+		if schema, ok := sg.typeIndex.externalKnownTypes[qualifiedName]; ok {
+			slog.Debug("[openapi] GenerateSchema: using externalKnownTypes", "qualifiedName", qualifiedName)
+			return schema
 		}
-		sg.mutex.Unlock()
-
-		return &Schema{Ref: fmt.Sprintf("#/components/schemas/%s", typeName)}
 	}
 
-	// 4) Reserve placeholder under lock
+	// 5) Check if schema already exists (avoid duplicate work)
 	sg.mutex.Lock()
-	if _, exists := sg.schemas[typeName]; exists {
+	if existingSchema, exists := sg.schemas[qualifiedName]; exists {
 		sg.mutex.Unlock()
-		slog.Debug("[openapi] GenerateSchema: schema already exists", "typeName", typeName)
-		return &Schema{Ref: fmt.Sprintf("#/components/schemas/%s", typeName)}
+		if existingSchema == nil {
+			// Currently being processed, return reference
+			return &Schema{Ref: fmt.Sprintf("#/components/schemas/%s", qualifiedName)}
+		}
+		slog.Debug("[openapi] GenerateSchema: schema already exists", "qualifiedName", qualifiedName)
+		return &Schema{Ref: fmt.Sprintf("#/components/schemas/%s", qualifiedName)}
 	}
-	sg.schemas[typeName] = nil
+
+	// 6) Reserve placeholder to prevent infinite recursion
+	sg.schemas[qualifiedName] = nil
 	sg.mutex.Unlock()
 
-	// 5) Do the real work *without* holding the lock
-	var built *Schema
+	// 7) Check if it's an enum type
+	if enumSchema := sg.handleEnumType(qualifiedName); enumSchema != nil {
+		slog.Debug("[openapi] GenerateSchema: detected enum type", "qualifiedName", qualifiedName)
+		sg.mutex.Lock()
+		sg.schemas[qualifiedName] = enumSchema
+		sg.mutex.Unlock()
+		return &Schema{Ref: fmt.Sprintf("#/components/schemas/%s", qualifiedName)}
+	}
 
-	// 5a) Try TypeIndex first
+	// 8) Generate the actual schema
+	var built *Schema
 	if sg.typeIndex != nil {
-		parts := strings.Split(typeName, ".")
-		if len(parts) == 2 {
-			// Qualified type (e.g., "sqlc.OrderStatus")
-			pkg, typ := parts[0], parts[1]
-			if ts := sg.typeIndex.LookupType(pkg, typ); ts != nil {
-				if structType, ok := ts.Type.(*ast.StructType); ok {
-					slog.Debug("[openapi] GenerateSchema: found qualified struct in TypeIndex", "typeName", typeName)
-					built = sg.convertStructToSchema(structType)
-				}
-			}
-		} else {
-			// Unqualified type - use efficient lookup
-			if ts, pkg := sg.typeIndex.LookupUnqualifiedType(typeName); ts != nil {
-				if structType, ok := ts.Type.(*ast.StructType); ok {
-					slog.Debug("[openapi] GenerateSchema: found unqualified struct in TypeIndex", "typeName", typeName, "package", pkg)
-					built = sg.convertStructToSchema(structType)
-				}
+		// Try qualified lookup first
+		if ts := sg.typeIndex.LookupQualifiedType(qualifiedName); ts != nil {
+			if structType, ok := ts.Type.(*ast.StructType); ok {
+				slog.Debug("[openapi] GenerateSchema: found struct in TypeIndex", "qualifiedName", qualifiedName)
+				built = sg.convertStructToSchema(structType)
 			}
 		}
 	}
 
-	// 5b) Fast fallback: basic type mapping (no expensive file parsing)
+	// 9) Fallback for unknown types
 	if built == nil {
-		slog.Debug("[openapi] GenerateSchema: TypeIndex lookup failed, using basic type mapping", "typeName", typeName)
-		basicType := mapGoTypeToOpenAPI(typeName)
+		slog.Debug(
+			"[openapi] GenerateSchema: TypeIndex lookup failed, using basic mapping",
+			"qualifiedName",
+			qualifiedName,
+		)
+		basicType := mapGoTypeToOpenAPI(qualifiedName)
 		built = &Schema{
 			Type:        basicType,
-			Description: "external or basic type",
+			Description: "external or unknown type",
 		}
 	}
 
-	// 6) Store the built schema and externalKnownTypes under lock
+	// 10) Store the built schema
 	sg.mutex.Lock()
-	sg.schemas[typeName] = built
+	slog.Debug("[openapi] GenerateSchema: storing schema", "qualifiedName", qualifiedName, "originalTypeName", typeName)
+	sg.schemas[qualifiedName] = built
 	if sg.typeIndex != nil && sg.typeIndex.externalKnownTypes != nil {
-		sg.typeIndex.externalKnownTypes[typeName] = &Schema{
-			Ref: fmt.Sprintf("#/components/schemas/%s", typeName),
+		sg.typeIndex.externalKnownTypes[qualifiedName] = &Schema{
+			Ref: fmt.Sprintf("#/components/schemas/%s", qualifiedName),
 		}
 	}
 	sg.mutex.Unlock()
 
-	// 7) Always return a $ref
-	return &Schema{Ref: fmt.Sprintf("#/components/schemas/%s", typeName)}
+	// 11) Always return a reference
+	return &Schema{Ref: fmt.Sprintf("#/components/schemas/%s", qualifiedName)}
 }
 
 // GetSchemas returns all generated schemas
@@ -185,22 +179,26 @@ func (sg *SchemaGenerator) convertStructToSchema(structType *ast.StructType) *Sc
 
 		schema.Properties[jsonName] = fieldSchema
 
-		// Ensure referenced types are generated (this ensures nested schemas are added to components)
+		// Ensure referenced types are generated using qualified names
 		switch t := field.Type.(type) {
 		case *ast.Ident:
 			if t.Obj != nil && t.Obj.Kind == ast.Typ {
-				// Likely a struct type in the same file/package
-				_ = sg.GenerateSchema(t.Name)
+				// Generate schema for the type using qualified name
+				qualifiedTypeName := sg.getQualifiedTypeName(t.Name)
+				_ = sg.GenerateSchema(qualifiedTypeName)
 			}
 		case *ast.StarExpr:
 			if ident, ok := t.X.(*ast.Ident); ok {
 				if ident.Obj != nil && ident.Obj.Kind == ast.Typ {
-					_ = sg.GenerateSchema(ident.Name)
+					// Generate schema for the type using qualified name
+					qualifiedTypeName := sg.getQualifiedTypeName(ident.Name)
+					_ = sg.GenerateSchema(qualifiedTypeName)
 				}
 			}
 		case *ast.SelectorExpr:
 			if ident, ok := t.X.(*ast.Ident); ok {
-				_ = sg.GenerateSchema(ident.Name + "." + t.Sel.Name)
+				qualifiedName := ident.Name + "." + t.Sel.Name
+				_ = sg.GenerateSchema(qualifiedName)
 			}
 		}
 
@@ -216,71 +214,54 @@ func (sg *SchemaGenerator) convertStructToSchema(structType *ast.StructType) *Sc
 // convertFieldType converts an AST type to OpenAPI schema
 func (sg *SchemaGenerator) convertFieldType(expr ast.Expr) *Schema {
 	slog.Debug("[openapi] convertFieldType: called")
-	var goType string
 
 	switch t := expr.(type) {
 	case *ast.Ident:
 		slog.Debug("[openapi] convertFieldType: Ident type", "name", t.Name)
-		goType = t.Name
 		// Check if it's a basic type first
 		basicType := mapGoTypeToOpenAPI(t.Name)
 		if basicType != "object" {
 			schema := &Schema{Type: basicType}
-			sg.enhanceSchemaBasedOnGoType(schema, goType)
+			sg.enhanceSchemaBasedOnGoType(schema, t.Name)
 			return schema
 		}
-		// For custom types, always try to generate schema (even if t.Obj is nil)
-		// This handles types from other packages better
-		return sg.GenerateSchema(t.Name)
+		// For custom types, generate schema using qualified name
+		qualifiedTypeName := sg.getQualifiedTypeName(t.Name)
+		return sg.GenerateSchema(qualifiedTypeName)
+
 	case *ast.StarExpr:
 		slog.Debug("[openapi] convertFieldType: StarExpr (pointer) type")
 		baseSchema := sg.convertFieldType(t.X)
-		// Get the underlying type name for enhancement
-		if ident, ok := t.X.(*ast.Ident); ok {
-			goType = "*" + ident.Name
-		} else if sel, ok := t.X.(*ast.SelectorExpr); ok {
-			if pkg, ok := sel.X.(*ast.Ident); ok {
-				goType = "*" + pkg.Name + "." + sel.Sel.Name
-			}
-		}
-		sg.enhanceSchemaBasedOnGoType(baseSchema, goType)
+		// For pointer types, we could enhance with nullable support in OpenAPI 3.1
 		return baseSchema
+
 	case *ast.ArrayType:
 		slog.Debug("[openapi] convertFieldType: ArrayType")
 		elemSchema := sg.convertFieldType(t.Elt)
-		schema := &Schema{
+		return &Schema{
 			Type:  "array",
 			Items: elemSchema,
 		}
-		// Get element type for enhancement
-		if ident, ok := t.Elt.(*ast.Ident); ok {
-			goType = "[]" + ident.Name
-		}
-		sg.enhanceSchemaBasedOnGoType(schema, goType)
-		return schema
+
 	case *ast.SelectorExpr:
 		slog.Debug("[openapi] convertFieldType: SelectorExpr", "sel", t.Sel.Name)
 		// Handle qualified types like json.RawMessage, time.Time, etc.
 		if ident, ok := t.X.(*ast.Ident); ok {
-			typeName := ident.Name + "." + t.Sel.Name
-			goType = typeName
-			slog.Debug("[openapi] convertFieldType: generating schema for qualified type", "typeName", typeName)
-			schema := sg.GenerateSchema(typeName)
-			sg.enhanceSchemaBasedOnGoType(schema, goType)
-			return schema
+			qualifiedName := ident.Name + "." + t.Sel.Name
+			slog.Debug("[openapi] convertFieldType: generating schema for qualified type", "qualifiedName", qualifiedName)
+			return sg.GenerateSchema(qualifiedName)
 		}
+
 	case *ast.MapType:
 		slog.Debug("[openapi] convertFieldType: MapType")
-		schema := &Schema{Type: "object", AdditionalProperties: sg.convertFieldType(t.Value)}
-		goType = "map[string]interface{}" // simplified
-		sg.enhanceSchemaBasedOnGoType(schema, goType)
-		return schema
+		return &Schema{
+			Type:                 "object",
+			AdditionalProperties: sg.convertFieldType(t.Value),
+		}
+
 	case *ast.InterfaceType:
 		slog.Debug("[openapi] convertFieldType: InterfaceType")
-		schema := &Schema{Type: "object"}
-		goType = "interface{}"
-		sg.enhanceSchemaBasedOnGoType(schema, goType)
-		return schema
+		return &Schema{Type: "object"}
 	}
 
 	slog.Debug("[openapi] convertFieldType: unknown type, defaulting to object")
@@ -402,6 +383,27 @@ func (sg *SchemaGenerator) extractTag(tag, key string) string {
 		}
 	}
 	return ""
+}
+
+// getQualifiedTypeName returns the qualified type name for schema keys.
+// This ensures consistent naming across the schema generation process.
+func (sg *SchemaGenerator) getQualifiedTypeName(typeName string) string {
+	// If already qualified, return as-is
+	if strings.Contains(typeName, ".") {
+		slog.Debug("[openapi] getQualifiedTypeName: already qualified", "typeName", typeName)
+		return typeName
+	}
+
+	// Use TypeIndex to get the proper qualified name
+	if sg.typeIndex != nil {
+		qualifiedName := sg.typeIndex.GetQualifiedTypeName(typeName)
+		slog.Debug("[openapi] getQualifiedTypeName: converted", "typeName", typeName, "qualifiedName", qualifiedName)
+		return qualifiedName
+	}
+
+	// Fallback to original name
+	slog.Debug("[openapi] getQualifiedTypeName: no typeIndex, using original", "typeName", typeName)
+	return typeName
 }
 
 // Helper functions
@@ -555,49 +557,45 @@ func (sg *SchemaGenerator) enhanceSchemaBasedOnGoType(schema *Schema, goType str
 	}
 }
 
-// ...existing code...
+// handleEnumType detects and handles enum types using qualified names
+func (sg *SchemaGenerator) handleEnumType(qualifiedName string) *Schema {
+	slog.Debug("[openapi] handleEnumType: checking if type is enum", "qualifiedName", qualifiedName)
 
-// Add this new function to detect and handle enum types
-func (sg *SchemaGenerator) handleEnumType(typeName string) *Schema {
-	slog.Debug("[openapi] handleEnumType: checking if type is enum", "typeName", typeName)
-
-	// Check if we have this type in our TypeIndex
 	if sg.typeIndex == nil {
 		return nil
 	}
 
-	parts := strings.Split(typeName, ".")
-	var pkg, typ string
-	if len(parts) == 2 {
-		pkg, typ = parts[0], parts[1]
-	} else {
-		// Unqualified type - try to find it
-		if ts, foundPkg := sg.typeIndex.LookupUnqualifiedType(typeName); ts != nil {
-			pkg = foundPkg
-			typ = typeName
-		} else {
-			return nil
-		}
-	}
-
-	// Look up the type specification
-	ts := sg.typeIndex.LookupType(pkg, typ)
+	// Look up the type specification using qualified name
+	ts := sg.typeIndex.LookupQualifiedType(qualifiedName)
 	if ts == nil {
 		return nil
 	}
 
-	// Check if it's a string-based type alias
+	// Check if it's a string-based type alias (common pattern for enums)
 	if ident, ok := ts.Type.(*ast.Ident); ok && ident.Name == "string" {
-		slog.Debug("[openapi] handleEnumType: found string-based type", "typeName", typeName)
+		slog.Debug("[openapi] handleEnumType: found string-based type", "qualifiedName", qualifiedName)
 
-		// Look for constants of this type in the same package
-		enumValues := sg.extractEnumValues(pkg, typ)
+		// Extract package name for enum value lookup
+		parts := strings.Split(qualifiedName, ".")
+		if len(parts) != 2 {
+			return nil
+		}
+
+		packageName, typeName := parts[0], parts[1]
+		enumValues := sg.extractEnumValues(packageName, typeName)
+
 		if len(enumValues) > 0 {
-			slog.Debug("[openapi] handleEnumType: found enum values", "typeName", typeName, "count", len(enumValues))
+			slog.Debug(
+				"[openapi] handleEnumType: found enum values",
+				"qualifiedName",
+				qualifiedName,
+				"count",
+				len(enumValues),
+			)
 			return &Schema{
 				Type:        "string",
 				Enum:        enumValues,
-				Description: fmt.Sprintf("Enum type %s", typeName),
+				Description: fmt.Sprintf("Enum type %s", qualifiedName),
 			}
 		}
 	}
