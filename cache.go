@@ -17,6 +17,7 @@ var (
 	cacheMutex    sync.RWMutex
 	typeIndex     *TypeIndex
 	typeIndexOnce sync.Once
+	modulePath    string // loaded from go.mod to identify internal packages
 )
 
 // Find a way to add method that will add external known types to the type index
@@ -25,6 +26,8 @@ var (
 func ensureTypeIndex() {
 	// debug.PrintStack()
 	typeIndexOnce.Do(func() {
+		// load module path for package classification
+		loadModulePath()
 		slog.Debug("[openapi] cache.go: initializing typeIndex and externalKnownTypes")
 		// Build type index once at startup
 		typeIndex = BuildTypeIndex()
@@ -164,6 +167,18 @@ func (idx *TypeIndex) indexFile(path string) error {
 	idx.files[path] = file
 	pkg := file.Name.Name
 
+	// Record package imports for external vs internal classification
+	for _, imp := range file.Imports {
+		importPath := strings.Trim(imp.Path.Value, `"`)
+		var alias string
+		if imp.Name != nil && imp.Name.Name != "" {
+			alias = imp.Name.Name
+		} else {
+			alias = filepath.Base(importPath)
+		}
+		idx.packageImports[importPath] = alias
+	}
+
 	if _, ok := idx.types[pkg]; !ok {
 		idx.types[pkg] = make(map[string]*ast.TypeSpec)
 	}
@@ -296,21 +311,17 @@ func (idx *TypeIndex) getQualifiedTypeName(pkg, typeName string) string {
 
 // isExternalPackage determines if a package is external/third-party
 func (idx *TypeIndex) isExternalPackage(pkg string) bool {
-	// List of known external packages that should keep their qualified names
-	externalPkgs := map[string]bool{
-		"sqlc":    true,
-		"pgtype":  true,
-		"json":    true,
-		"time":    true,
-		"uuid":    true,
-		"net":     true,
-		"url":     true,
-		"sql":     true,
-		"big":     true,
-		"decimal": true,
+	// If an import alias maps to a path outside the current module, treat as external
+	for importPath, alias := range idx.packageImports {
+		if alias == pkg {
+			if modulePath != "" && strings.HasPrefix(importPath, modulePath) {
+				return false
+			}
+			return true
+		}
 	}
-
-	return externalPkgs[pkg]
+	// Default to internal
+	return false
 }
 
 // findProjectRoot finds the project root by looking for go.mod file
@@ -338,4 +349,25 @@ func findProjectRoot() string {
 	}
 
 	return ""
+}
+
+// loadModulePath reads the Go module path from go.mod to distinguish internal vs external packages
+func loadModulePath() {
+	if modulePath != "" {
+		return
+	}
+	root := findProjectRoot()
+	if root == "" {
+		return
+	}
+	data, err := os.ReadFile(filepath.Join(root, "go.mod"))
+	if err != nil {
+		return
+	}
+	for _, line := range strings.Split(string(data), "\n") {
+		if strings.HasPrefix(line, "module ") {
+			modulePath = strings.TrimSpace(strings.TrimPrefix(line, "module "))
+			return
+		}
+	}
 }

@@ -67,7 +67,7 @@ func GetUserByIDHandler(w http.ResponseWriter, r *http.Request) {
 
 // TestSchemaGeneration tests the core schema generation functionality
 func TestSchemaGeneration(t *testing.T) {
-	gen := NewSchemaGenerator()
+	gen := newTestSchemaGenerator()
 
 	tests := []struct {
 		name     string
@@ -104,7 +104,7 @@ func TestSchemaGeneration(t *testing.T) {
 
 // TestAnnotationParsing tests annotation parsing functionality
 func TestAnnotationParsing(t *testing.T) {
-	annotation := ParseAnnotations("openapi_test.go", "CreateUserHandler")
+	annotation, _ := ParseAnnotations("openapi_test.go", "CreateUserHandler")
 	if annotation == nil {
 		t.Fatal("ParseAnnotations returned nil")
 	}
@@ -143,7 +143,7 @@ func TestSpecGeneration(t *testing.T) {
 	r.Get("/users", GetUsersHandler)
 	r.Get("/users/{id}", GetUserByIDHandler)
 
-	gen := NewGenerator()
+	gen := newTestGenerator()
 	spec := gen.GenerateSpec(r, cfg)
 
 	// Check basic spec structure
@@ -333,7 +333,7 @@ func TestConfigValidation(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			r := chi.NewRouter()
-			gen := NewGenerator()
+			gen := newTestGenerator()
 			spec := gen.GenerateSpec(r, tt.config)
 
 			if spec.Info.Title != tt.config.Title {

@@ -16,7 +16,10 @@ import (
 func HandlerWithAnnotations() {}
 
 func TestParseAnnotations_AllAnnotations(t *testing.T) {
-	annotation := ParseAnnotations("annotations_test.go", "HandlerWithAnnotations")
+	annotation, err := ParseAnnotations("annotations_test.go", "HandlerWithAnnotations")
+	if err != nil {
+		t.Fatalf("ParseAnnotations error: %v", err)
+	}
 	if annotation == nil {
 		t.Fatal("ParseAnnotations returned nil")
 	}
@@ -41,7 +44,10 @@ func TestParseAnnotations_AllAnnotations(t *testing.T) {
 }
 
 func TestParseAnnotations_Empty(t *testing.T) {
-	annotation := ParseAnnotations("annotations_test.go", "NonExistentHandler")
+	annotation, err := ParseAnnotations("annotations_test.go", "NonExistentHandler")
+	if err != nil {
+		t.Fatalf("ParseAnnotations error: %v", err)
+	}
 	if annotation != nil {
 		t.Error("expected nil for non-existent handler")
 	}
@@ -49,7 +55,10 @@ func TestParseAnnotations_Empty(t *testing.T) {
 
 func Test_parseParamAnnotation(t *testing.T) {
 	line := "@Param foo query int true \"desc\""
-	param := parseParamAnnotation(line)
+	param, err := parseParamAnnotation(line)
+	if err != nil {
+		t.Fatalf("parseParamAnnotation error: %v", err)
+	}
 	if param == nil || param.Name != "foo" || param.In != "query" || param.Type != "int" || !param.Required ||
 		param.Description != "desc" {
 		t.Errorf("unexpected param: %+v", param)
@@ -58,7 +67,10 @@ func Test_parseParamAnnotation(t *testing.T) {
 
 func Test_parseSuccessAnnotation(t *testing.T) {
 	line := "@Success 201 {object} Foo \"desc\""
-	succ := parseSuccessAnnotation(line)
+	succ, err := parseSuccessAnnotation(line)
+	if err != nil {
+		t.Fatalf("parseSuccessAnnotation error: %v", err)
+	}
 	if succ == nil || succ.StatusCode != 201 || succ.DataType != "Foo" || succ.Description != "desc" {
 		t.Errorf("unexpected success: %+v", succ)
 	}
@@ -66,7 +78,10 @@ func Test_parseSuccessAnnotation(t *testing.T) {
 
 func Test_parseFailureAnnotation(t *testing.T) {
 	line := "@Failure 404 {object} Bar \"not found\""
-	fail := parseFailureAnnotation(line)
+	fail, err := parseFailureAnnotation(line)
+	if err != nil {
+		t.Fatalf("parseFailureAnnotation error: %v", err)
+	}
 	if fail == nil || fail.StatusCode != 404 || fail.Description != "not found" {
 		t.Errorf("unexpected failure: %+v", fail)
 	}
