@@ -17,7 +17,7 @@ type QualifiedTestOrder struct {
 
 // TestQualifiedNaming_Internal tests internal types get qualified names
 func TestQualifiedNaming_Internal(t *testing.T) {
-	gen := newTestSchemaGenerator()
+	gen := NewTestSchemaGenerator()
 
 	// Use an existing type from the openapi package
 	schema := gen.GenerateSchema("Schema")
@@ -40,7 +40,7 @@ func TestQualifiedNaming_Internal(t *testing.T) {
 
 // TestQualifiedNaming_External tests external types
 func TestQualifiedNaming_External(t *testing.T) {
-	gen := newTestSchemaGenerator()
+	gen := NewTestSchemaGenerator()
 
 	// Test with a known external type
 	schema := gen.GenerateSchema("time.Time")
@@ -64,7 +64,7 @@ func TestQualifiedNaming_External(t *testing.T) {
 
 // TestQualifiedNaming_NoDuplicates tests no duplicate schemas
 func TestQualifiedNaming_NoDuplicates(t *testing.T) {
-	gen := newTestSchemaGenerator()
+	gen := NewTestSchemaGenerator()
 
 	// Generate schema for same type multiple times using existing type
 	schema1 := gen.GenerateSchema("Schema")
@@ -91,7 +91,7 @@ func TestQualifiedNaming_NoDuplicates(t *testing.T) {
 
 // TestQualifiedNaming_Nested tests nested types use qualified names
 func TestQualifiedNaming_Nested(t *testing.T) {
-	gen := newTestSchemaGenerator()
+	gen := NewTestSchemaGenerator()
 
 	// Use existing nested types
 	schema := gen.GenerateSchema("Components")
