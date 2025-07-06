@@ -1008,14 +1008,7 @@ When adding new features:
 
 ## Changelog
 
-### v0.1.0 (Latest)
-
--   Initial public release
--   Full OpenAPI 3.1 support
--   High-performance type indexing
--   Comprehensive documentation
--   Extensive test coverage
--   Stable core functionality
+See the [CHANGELOG.md](CHANGELOG.md).
 
 ## Support & Community
 

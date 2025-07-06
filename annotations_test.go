@@ -9,6 +9,9 @@ import (
 // @Summary Test summary
 // @Description Test description
 // @Tags foo,bar
+// @Accept application/xml
+// @Produce application/json
+// @Security ApiKeyAuth
 // @Param id path int true "ID param"
 // @Param q query string false "Query param"
 // @Success 200 {object} TestResponse "Success desc"
@@ -34,6 +37,16 @@ func TestParseAnnotations_AllAnnotations(t *testing.T) {
 	}
 	if len(annotation.Parameters) != 2 {
 		t.Errorf("expected 2 parameters, got %+v", annotation.Parameters)
+	}
+	// Accept, Produce and Security
+	if len(annotation.Accept) != 1 || annotation.Accept[0] != "application/xml" {
+		t.Errorf("expected Accept [application/xml], got %v", annotation.Accept)
+	}
+	if len(annotation.Produce) != 1 || annotation.Produce[0] != "application/json" {
+		t.Errorf("expected Produce [application/json], got %v", annotation.Produce)
+	}
+	if len(annotation.Security) != 1 || annotation.Security[0] != "ApiKeyAuth" {
+		t.Errorf("expected Security [ApiKeyAuth], got %v", annotation.Security)
 	}
 	if annotation.Success == nil || annotation.Success.DataType != "TestResponse" {
 		t.Errorf("expected success DataType 'TestResponse', got %+v", annotation.Success)

@@ -30,7 +30,7 @@ type openapiTestOther struct {
 }
 
 func TestSchemaGenerator_SimpleStruct(t *testing.T) {
-	gen := newTestSchemaGenerator()
+	gen := NewTestSchemaGenerator()
 	schema := gen.GenerateSchema("Simple")
 	if schema == nil || schema.Ref == "" {
 		t.Fatal("expected schema ref for Simple")
@@ -42,7 +42,7 @@ func TestSchemaGenerator_SimpleStruct(t *testing.T) {
 }
 
 func TestSchemaGenerator_PointerField(t *testing.T) {
-	gen := newTestSchemaGenerator()
+	gen := NewTestSchemaGenerator()
 	schema := gen.GenerateSchema("WithPointer")
 	if schema == nil || schema.Ref == "" {
 		t.Fatal("expected schema ref for WithPointer")
@@ -50,28 +50,15 @@ func TestSchemaGenerator_PointerField(t *testing.T) {
 }
 
 func TestSchemaGenerator_ArrayField(t *testing.T) {
-	gen := newTestSchemaGenerator()
+	gen := NewTestSchemaGenerator()
 	schema := gen.GenerateSchema("WithArray")
 	if schema == nil || schema.Ref == "" {
 		t.Fatal("expected schema ref for WithArray")
 	}
 }
 
-// TODO
-// func TestSchemaGenerator_NestedStruct(t *testing.T) {
-// 	gen := NewSchemaGenerator()
-// 	schema := gen.GenerateSchema("Nested")
-// 	if schema == nil || schema.Ref == "" {
-// 		t.Fatal("expected schema ref for Nested")
-// 	}
-// 	all := gen.GetSchemas()
-// 	if _, ok := all["Simple"]; !ok {
-// 		t.Error("Nested should reference Simple schema")
-// 	}
-// }
-
 func TestSchemaGenerator_QualifiedType(t *testing.T) {
-	gen := newTestSchemaGenerator()
+	gen := NewTestSchemaGenerator()
 	schema := gen.GenerateSchema("openapiTestOther")
 	if schema == nil || schema.Ref == "" {
 		t.Fatal("expected schema ref for openapiTestOther")
@@ -79,7 +66,7 @@ func TestSchemaGenerator_QualifiedType(t *testing.T) {
 }
 
 func TestSchemaGenerator_BasicTypes(t *testing.T) {
-	gen := newTestSchemaGenerator()
+	gen := NewTestSchemaGenerator()
 	cases := map[string]string{
 		"int":     "integer",
 		"string":  "string",
