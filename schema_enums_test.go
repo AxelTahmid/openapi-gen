@@ -24,3 +24,16 @@ func TestHandleEnumType_NoEnum(t *testing.T) {
 	schema := sg.handleEnumType("nonexistent.Type")
 	AssertEqual(t, nil, schema)
 }
+
+// TestHandleEnumType_Positive tests that a string-based enum with constants is converted to a Schema.
+func TestHandleEnumType_Positive(t *testing.T) {
+	sg := NewTestSchemaGenerator()
+	// MyEnum defined in schema_enums_example.go
+	schema := sg.handleEnumType("openapi.MyEnum")
+	if schema == nil {
+		t.Fatal("expected non-nil schema for MyEnum")
+	}
+	AssertEqual(t, "string", schema.Type)
+	AssertDeepEqual(t, []interface{}{"A", "B"}, schema.Enum)
+	AssertEqual(t, "Enum type openapi.MyEnum", schema.Description)
+}
