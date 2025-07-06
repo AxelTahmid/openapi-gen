@@ -14,7 +14,6 @@ jobs:
         steps:
             - uses: actions/checkout@v4
 
-            # Setup Go and run tests
             - name: Set up Go
               uses: actions/setup-go@v4
               with:
@@ -26,4 +25,5 @@ jobs:
             - name: Release Please
               uses: googleapis/release-please-action@v4
               with:
+                  token: ${{ secrets.GH_TOKEN_RELEASE }}
                   release-type: go

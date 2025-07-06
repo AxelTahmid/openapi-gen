@@ -1,9 +1,10 @@
 package openapi
 
 import (
-	"go/ast"
-	"go/parser"
-	"testing"
+   "go/ast"
+   "go/parser"
+   "strconv"
+   "testing"
 )
 
 func TestIsPointerType(t *testing.T) {
@@ -14,8 +15,8 @@ func TestIsPointerType(t *testing.T) {
 		{nil, false},
 		{&ast.StarExpr{}, true},
 	}
-	for i, tc := range tests {
-		t.Run(string(i), func(t *testing.T) {
+   for i, tc := range tests {
+	   t.Run(strconv.Itoa(i), func(t *testing.T) {
 			got := isPointerType(tc.expr)
 			AssertEqual(t, tc.want, got)
 		})
@@ -31,8 +32,8 @@ func TestHasOmitEmpty(t *testing.T) {
 		{&ast.BasicLit{Value: "`json:\"a,omitempty\"`"}, true},
 		{&ast.BasicLit{Value: "`json:\"b\"`"}, false},
 	}
-	for i, tc := range tests {
-		t.Run(string(i), func(t *testing.T) {
+   for i, tc := range tests {
+	   t.Run(strconv.Itoa(i), func(t *testing.T) {
 			got := hasOmitEmpty(tc.tag)
 			AssertEqual(t, tc.want, got)
 		})
